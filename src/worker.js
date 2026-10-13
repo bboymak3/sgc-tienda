@@ -99,9 +99,27 @@ async function getSystemPrompt(env, tenantId, businessName) {
 
   let productosText = 'No hay productos cargados aún.';
   if (productos.length > 0) {
-    productosText = productos.map((p, i) =>
-      `${i + 1}. ${p.nombre} - $${p.precio_oferta || p.precio} ${moneda}${p.descripcion ? ' (' + p.descripcion + ')' : ''}`
-    ).join('\n');
+    // NO listar todos los productos si son muchos. Solo mostrar resumen por categoria.
+    if (productos.length <= 8) {
+      productosText = productos.map((p, i) =>
+        `${i + 1}. ${p.nombre} - $${p.precio_oferta || p.precio} ${moneda}`
+      ).join('\n');
+    } else {
+      // Resumen por categoria
+      const categorias = {};
+      for (const p of productos) {
+        const cat = p.categoria || 'General';
+        if (!categorias[cat]) categorias[cat] = [];
+        categorias[cat].push(p);
+      }
+      const catSummary = Object.entries(categorias).map(([cat, items]) => {
+        const precios = items.map(p => p.precio_oferta || p.precio);
+        const minP = Math.min(...precios);
+        const maxP = Math.max(...precios);
+        return `${cat}: ${items.length} productos ($${minP} - $${maxP} ${moneda})`;
+      }).join('\n');
+      productosText = `Tenemos ${productos.length} productos en ${Object.keys(categorias).length} categorias:\n${catSummary}\n\nCuando un cliente pregunte por una categoria especifica, muestra los productos de esa categoria. Cuando pregunte por un producto concreto, confirma si lo tenemos y su precio.`;
+    }
   }
 
   return `Eres ${botName}, el asistente virtual de la tienda "${businessName}". Tu UNICA funcion es ayudar a los clientes a hacer pedidos de productos. NADA mas.

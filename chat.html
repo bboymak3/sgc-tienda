@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chat — SGC Tienda</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Inter',sans-serif;background:#0a0a0a;color:#e8e8e8;height:100vh;display:flex;flex-direction:column}
+#chat{flex:1;overflow-y:auto;padding:16px;background:#111}
+.msg{max-width:80%;margin-bottom:10px;padding:10px 14px;border-radius:12px;font-size:.9rem;line-height:1.5;white-space:pre-wrap;word-break:break-word}
+.msg.bot{background:#222;border:1px solid #2a2a2a}
+.msg.user{background:#22c55e;color:#042713;margin-left:auto;text-align:right}
+.typing{color:#666;font-size:.85rem;padding:8px}
+.input-bar{padding:12px;background:#111;border-top:1px solid #2a2a2a;display:flex;gap:8px}
+input{flex:1;padding:12px 16px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;color:#fff;font-size:.95rem;outline:none;font-family:inherit}
+input:focus{border-color:#22c55e}
+button{background:#22c55e;color:#042713;border:none;padding:12px 18px;border-radius:10px;font-weight:700;cursor:pointer;font-size:1rem}
+button:disabled{opacity:.5;cursor:wait}
+.wa-btn{display:block;width:100%;margin-top:8px;padding:10px;background:#25D366;color:#fff;border:none;border-radius:10px;font-weight:600;text-align:center;text-decoration:none;font-size:.85rem}
+.wa-btn:hover{background:#1da851}
+.header{padding:12px 16px;background:#111;border-bottom:1px solid #2a2a2a;display:flex;align-items:center;justify-content:space-between}
+.header h3{font-size:.95rem;font-weight:700}
+.header .status{font-size:.7rem;color:#6ee7b7}
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.2);border-top-color:#22c55e;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="header">
+<div>
+<h3 id="botTitle">Tienda Virtual</h3>
+<span class="status" id="botStatus">● En línea</span>
+</div>
+</div>
+<div id="chat"></div>
+<div class="input-bar">
+<input id="input" placeholder="Escribe un mensaje..." onkeypress="if(event.key==='Enter')send()">
+<button id="sendBtn" onclick="send()"><i class="fas fa-paper-plane"></i></button>
+</div>
+<a id="waBtn" class="wa-btn" style="display:none" target="_blank"><i class="fab fa-whatsapp"></i> Hablar con una persona por WhatsApp</a>
+
+<script>
+const API = 'https://sgc-tienda.activo.workers.dev';
+const params = new URLSearchParams(location.search);
+const TENANT = params.get('t') || 1;
+let history = [];
+let sessionId = null;
+
+async function init() {
+  // Cargar config
+  try {
+    const res = await fetch(`${API}/api/config?t=${TENANT}`);
+    const data = await res.json();
+    const c = data.config || {};
+    document.getElementById('botTitle').textContent = c.bot_name || 'Tienda Virtual';
+    if (c.welcome_message) {
+      addMsg('bot', c.welcome_message);
+      history.push({ role: 'assistant', content: c.welcome_message });
+    }
+    if (c.whatsapp_enabled === 'true' && c.whatsapp_number) {
+      const wa = document.getElementById('waBtn');
+      const msg = encodeURIComponent(c.whatsapp_message || 'Hola, quiero hablar con una persona real');
+      wa.href = `https://wa.me/${c.whatsapp_number}?text=${msg}`;
+      wa.style.display = 'block';
+    }
+  } catch(e) {
+    addMsg('bot', 'Hola! Bienvenido a nuestra tienda. En que puedo ayudarte?');
+    history.push({ role: 'assistant', content: 'Hola! Bienvenido a nuestra tienda. En que puedo ayudarte?' });
+  }
+}
+
+function addMsg(role, text) {
+  const chat = document.getElementById('chat');
+  const div = document.createElement('div');
+  div.className = 'msg ' + (role === 'user' ? 'user' : 'bot');
+  div.textContent = text;
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function addTyping() {
+  const chat = document.getElementById('chat');
+  const div = document.createElement('div');
+  div.className = 'typing';
+  div.id = 'typingIndicator';
+  div.innerHTML = '<span class="spinner"></span> escribiendo...';
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+}
+function removeTyping() {
+  const t = document.getElementById('typingIndicator');
+  if (t) t.remove();
+}
+
+async function send() {
+  const input = document.getElementById('input');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  document.getElementById('sendBtn').disabled = true;
+  addMsg('user', text);
+  history.push({ role: 'user', content: text });
+  addTyping();
+  try {
+    const res = await fetch(`${API}/api/chat?t=${TENANT}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: history, session_id: sessionId })
+    });
+    const data = await res.json();
+    if (data.error) {
+      addMsg('bot', 'Lo siento, hubo un error: ' + data.error);
+    } else {
+      addMsg('bot', data.response);
+      history.push({ role: 'assistant', content: data.response });
+      if (data.session_id) sessionId = data.session_id;
+    }
+  } catch(e) {
+    addMsg('bot', 'Error de conexion. Intenta de nuevo.');
+  }
+  removeTyping();
+  document.getElementById('sendBtn').disabled = false;
+  document.getElementById('input').focus();
+}
+
+init();
+</script>
+</body>
+</html>

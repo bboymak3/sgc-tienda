@@ -148,9 +148,10 @@ tr:hover td{background:var(--bg2)}
 <div class="card-title"><i class="fas fa-file"></i> Detalle del Pedido #<span id="orderDetailId"></span></div>
 <div id="orderDetailContent"></div>
 <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">
-<button class="btn btn-green btn-sm" onclick="updateOrderStatus('aprobada')"><i class="fas fa-check"></i> Aprobar</button>
-<button class="btn btn-danger btn-sm" onclick="updateOrderStatus('rechazada')"><i class="fas fa-times"></i> Rechazar</button>
-<button class="btn btn-outline btn-sm" onclick="updateOrderStatus('completada')"><i class="fas fa-check-double"></i> Completar</button>
+<button class="btn btn-green btn-sm" onclick="updateOrderStatus('confirmada','aprobada')"><i class="fas fa-check"></i> Aprobar</button>
+<button class="btn btn-danger btn-sm" onclick="updateOrderStatus('cancelada','rechazada')"><i class="fas fa-times"></i> Rechazar</button>
+<button class="btn btn-outline btn-sm" onclick="updateOrderStatus('despachada','aprobada')"><i class="fas fa-truck"></i> Despachado</button>
+<button class="btn btn-outline btn-sm" onclick="updateOrderStatus('entregada','aprobada')"><i class="fas fa-check-double"></i> Entregado</button>
 </div>
 </div>
 </div>
@@ -493,11 +494,11 @@ async function viewOrder(id) {
     document.getElementById('orderDetail').classList.remove('hidden');
   } catch (e) { toast(e.message, 'error'); }
 }
-async function updateOrderStatus(status) {
+async function updateOrderStatus(estado, aprobacion) {
   if (!currentOrderId) return;
   try {
-    await api('/api/admin/orders/' + currentOrderId, { method: 'PATCH', body: JSON.stringify({ estado_aprobacion: status, estado: status === 'aprobada' ? 'confirmada' : status === 'rechazada' ? 'cancelada' : 'completada' }) });
-    toast('Pedido actualizado', 'success');
+    await api('/api/admin/orders/' + currentOrderId, { method: 'PATCH', body: JSON.stringify({ estado: estado, estado_aprobacion: aprobacion }) });
+    toast('Pedido actualizado: ' + estado, 'success');
     loadOrders();
     document.getElementById('orderDetail').classList.add('hidden');
   } catch (e) { toast(e.message, 'error'); }
