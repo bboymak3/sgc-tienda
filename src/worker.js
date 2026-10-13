@@ -254,6 +254,10 @@ export default {
       return handleCreateCategory(request, env);
     }
 
+    // Si no es API, servir info del servicio
+    if (!path.startsWith('/api/')) {
+      return new Response('<html><head><meta http-equiv="refresh" content="0;url=https://sgc-tienda.pages.dev/admin"></head><body style="background:#0a0a0a;color:#22c55e;font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0"><div style="text-align:center"><h1>SGC Tienda API</h1><p>Worker activo. <a href="https://sgc-tienda.pages.dev/admin" style="color:#22c55e">Ir al panel admin</a></p><p style="color:#666;font-size:0.8rem">Health: <a href="/api/health" style="color:#22c55e">/api/health</a></p></div></body></html>', { headers: { 'Content-Type': 'text/html' } });
+    }
     return jsonError('Endpoint no encontrado: ' + path, 404);
   }
 };
