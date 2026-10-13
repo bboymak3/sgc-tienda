@@ -282,6 +282,14 @@ async function handleChat(request, env, url) {
       return jsonError('Bot de tienda no habilitado para este tenant', 403);
     }
 
+    // Verificar si el bot está pausado
+    const botPaused = await env.DB.prepare(
+      "SELECT valor FROM sgc_tie_Config WHERE tenant_id = ? AND clave = 'bot_paused'"
+    ).bind(tenantId).first();
+    if (botPaused && botPaused.valor === 'true') {
+      return jsonError('El bot esta temporalmente pausado. Vuelve mas tarde.', 503);
+    }
+
     // Obtener o crear conversación
     let conversation = null;
     if (session_id) {
@@ -322,7 +330,16 @@ async function handleChat(request, env, url) {
     // Construir system prompt
     const systemPrompt = await getSystemPrompt(env, tenantId, businessName);
 
-    // Llamar a Cloudflare AI
+    // Obtener config de IA del tenant directamente
+    const cfgResult = await env.DB.prepare(
+      'SELECT clave, valor FROM sgc_tie_Config WHERE tenant_id = ?'
+    ).bind(tenantId).all();
+    const aiConfig = {};
+    for (const row of (cfgResult.results || [])) {
+      aiConfig[row.clave] = row.valor;
+    }
+
+    // Llamar a IA: Cloudflare AI o Anthropic Claude
     let aiResponse = '';
     try {
       const aiMessages = [
@@ -333,11 +350,40 @@ async function handleChat(request, env, url) {
         }))
       ];
 
-      const aiResult = await env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
-        messages: aiMessages,
-        max_tokens: 500,
-      });
-      aiResponse = aiResult.response || 'Lo siento, no pude procesar tu mensaje. Intenta de nuevo.';
+      const aiProvider = aiConfig.ai_provider || 'cloudflare';
+      const aiModel = aiConfig.ai_model || '@cf/meta/llama-3.1-8b-instruct';
+      const anthropicKey = aiConfig.anthropic_api_key || '';
+
+      if (aiProvider === 'anthropic' && anthropicKey) {
+        // Usar Anthropic Claude
+        const claudeModel = aiModel || 'claude-3-haiku-20240307';
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': anthropicKey,
+            'anthropic-version': '2023-06-01'
+          },
+          body: JSON.stringify({
+            model: claudeModel,
+            max_tokens: 500,
+            system: systemPrompt,
+            messages: messages.slice(-10).map(m => ({
+              role: m.role === 'assistant' ? 'assistant' : 'user',
+              content: typeof m === 'string' ? m : (m.content || '')
+            }))
+          })
+        });
+        const claudeData = await response.json();
+        aiResponse = claudeData.content?.[0]?.text || 'Lo siento, no pude procesar tu mensaje.';
+      } else {
+        // Usar Cloudflare AI (default)
+        const aiResult = await env.AI.run(aiModel, {
+          messages: aiMessages,
+          max_tokens: 500,
+        });
+        aiResponse = aiResult.response || 'Lo siento, no pude procesar tu mensaje. Intenta de nuevo.';
+      }
     } catch (e) {
       aiResponse = 'Hola! Soy el bot de la tienda. En este momento estoy teniendo problemas tecnicos. Por favor intenta mas tarde.';
     }
@@ -417,16 +463,31 @@ async function handleGetPublicConfig(request, env, url) {
 }
 
 async function handleAdminLogin(request, env) {
-  const { email, password } = await request.json();
-  if (!email || !password) return jsonError('Email y password requeridos', 400);
+  const { email, password, username } = await request.json();
+  const loginUser = username || email;
+  if (!loginUser || !password) return jsonError('Usuario y password requeridos', 400);
 
-  const user = await env.DB.prepare('SELECT * FROM sgc_cit_AdminUsers WHERE email = ? AND activo = 1').bind(email.toLowerCase()).first();
+  // Buscar por username (sgc_cit_AdminUsers usa username, no email)
+  const user = await env.DB.prepare('SELECT * FROM sgc_cit_AdminUsers WHERE username = ? AND activo = 1').bind(loginUser.trim().toLowerCase()).first();
   if (!user) return jsonError('Credenciales invalidas', 401);
 
-  if (user.password_hash !== password) return jsonError('Credenciales invalidas', 401);
+  // Verificar password: puede ser texto plano o SHA-256
+  let valid = false;
+  if (user.password_hash && user.password_hash.startsWith('$2b$')) {
+    valid = false; // bcrypt no implementado
+  } else if (user.password_hash.length === 64) {
+    // SHA-256
+    const hashBuf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(password));
+    const hashHex = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+    valid = (hashHex === user.password_hash);
+  } else {
+    // Texto plano
+    valid = (user.password_hash === password);
+  }
+  if (!valid) return jsonError('Credenciales invalidas', 401);
 
-  const token = await signJWT({ id: user.id, email: user.email, role: user.role || 'admin' });
-  return json({ token, user: { id: user.id, email: user.email, role: user.role || 'admin' } });
+  const token = await signJWT({ id: user.id, username: user.username, role: user.rol || 'admin' }, env.JWT_SECRET || JWT_SECRET);
+  return json({ token, user: { id: user.id, username: user.username, role: user.rol || 'admin' } });
 }
 
 async function handleListTenants(request, env) {

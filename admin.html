@@ -31,7 +31,6 @@ tr:hover td{background:var(--bg2)}
 .badge-green{background:rgba(34,197,94,.15);color:#6ee7b7}
 .badge-yellow{background:rgba(251,191,36,.15);color:#fcd34d}
 .badge-red{background:rgba(239,68,68,.15);color:#fca5a5}
-.badge-blue{background:rgba(59,130,246,.15);color:#93c5fd}
 .toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:var(--bg3);color:#fff;padding:12px 24px;border-radius:8px;z-index:999;opacity:0;transition:opacity .3s}
 .toast.show{opacity:1}.toast.success{background:var(--green);color:#042713}.toast.error{background:#ef4444}
 .hidden{display:none!important}
@@ -48,6 +47,10 @@ tr:hover td{background:var(--bg2)}
 .stat{text-align:center;padding:16px;background:var(--bg2);border-radius:8px}
 .stat-val{font-size:1.8rem;font-weight:800;color:var(--green)}
 .stat-label{font-size:.75rem;color:var(--muted);text-transform:uppercase}
+.url-box{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px;margin-top:8px;display:flex;align-items:center;gap:8px}
+.url-box code{color:var(--green);font-size:.82rem;flex:1;word-break:break-all}
+.copy-btn{background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:.75rem;white-space:nowrap}
+.copy-btn:hover{border-color:var(--green);color:var(--green)}
 </style>
 </head>
 <body>
@@ -56,8 +59,8 @@ tr:hover td{background:var(--bg2)}
 <div id="loginScreen" style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px">
 <div style="background:var(--bg1);border:1px solid var(--border);border-radius:16px;padding:40px;max-width:380px;width:100%">
 <h2 style="text-align:center;margin-bottom:20px"><i class="fas fa-shopping-bag" style="color:var(--green)"></i> SGC Tienda</h2>
-<input type="email" id="loginEmail" placeholder="admin@email.com" style="margin-bottom:10px">
-<input type="password" id="loginPass" placeholder="Password" style="margin-bottom:16px">
+<input type="text" id="loginUser" placeholder="Usuario (admin)" style="margin-bottom:10px">
+<input type="password" id="loginPass" placeholder="Contraseña" style="margin-bottom:16px">
 <button class="btn btn-green" style="width:100%;justify-content:center" id="loginBtn">Entrar</button>
 <p style="text-align:center;margin-top:16px;color:var(--dim);font-size:.8rem">Panel de administracion de Bot de Tienda</p>
 </div>
@@ -75,11 +78,11 @@ tr:hover td{background:var(--bg2)}
 
 <div class="main">
 <div class="tabs">
-<div class="tab active" onclick="switchTab('tenants')">Tiendas</div>
-<div class="tab" onclick="switchTab('products')">Productos</div>
-<div class="tab" onclick="switchTab('orders')">Pedidos</div>
-<div class="tab" onclick="switchTab('config')">Config</div>
-<div class="tab" onclick="switchTab('demo')">Demo Chat</div>
+<div class="tab active" onclick="switchTab(event,'tenants')">Tiendas</div>
+<div class="tab" onclick="switchTab(event,'products')">Productos</div>
+<div class="tab" onclick="switchTab(event,'orders')">Pedidos</div>
+<div class="tab" onclick="switchTab(event,'config')">Config Bot IA</div>
+<div class="tab" onclick="switchTab(event,'demo')">Demo Chat</div>
 </div>
 
 <!-- TAB: TENANTS -->
@@ -137,7 +140,7 @@ tr:hover td{background:var(--bg2)}
 </div>
 <div style="margin-bottom:12px"><label>Tienda</label><select id="orderTenant" onchange="loadOrders()"><option value="0">Todas</option></select></div>
 <div style="overflow-x:auto"><table>
-<thead><tr><th>ID</th><th>Cliente</th><th>Productos</th><th>Total</th><th>Estado</th><th>Aprobacion</th><th>Fecha</th><th>Acciones</th></tr></thead>
+<thead><tr><th>ID</th><th>Cliente</th><th>Productos</th><th>Total</th><th>Estado</th><th>Aprob.</th><th>Fecha</th><th>Acc.</th></tr></thead>
 <tbody id="ordersBody"><tr><td colspan="8" style="text-align:center;padding:30px;color:var(--dim)">Cargando...</td></tr></tbody>
 </table></div>
 </div>
@@ -155,19 +158,68 @@ tr:hover td{background:var(--bg2)}
 <!-- TAB: CONFIG -->
 <div id="tab-config" class="hidden">
 <div class="card">
-<div class="card-title"><i class="fas fa-cog"></i> Configuracion del Bot</div>
+<div class="card-title"><i class="fas fa-cog"></i> Configuracion del Bot de Tienda</div>
 <div style="margin-bottom:12px"><label>Tienda</label><select id="cfgTenant" onchange="loadConfig()"></select></div>
+
+<h3 style="font-size:.9rem;color:var(--muted);margin-bottom:12px;text-transform:uppercase">Personalidad del Bot</h3>
 <div class="grid2">
 <div><label>Nombre del Bot</label><input id="cfgBotName" value="BotTienda"></div>
-<div><label>Color Primario</label><input id="cfgColor" value="#22c55e"></div>
+<div><label>Color Primario (hex)</label><input id="cfgColor" value="#22c55e"></div>
 <div><label>Moneda</label><input id="cfgMoneda" value="CLP"></div>
-<div><label>Metodos de Pago</label><input id="cfgPagos" value="efectivo,transferencia,transbank"></div>
+<div><label>Metodos de Pago (separados por coma)</label><input id="cfgPagos" value="efectivo,transferencia,transbank"></div>
 </div>
 <div style="margin-top:8px"><label>Mensaje de Bienvenida</label><textarea id="cfgWelcome" rows="2"></textarea></div>
-<div style="margin-top:8px"><label>Prompt Personalizado (instrucciones extra para la IA)</label><textarea id="cfgPrompt" rows="4"></textarea></div>
-<div style="margin-top:8px"><label><input type="checkbox" id="cfgPaused" style="width:auto"> Pausar Bot</label></div>
-<div style="margin-top:12px"><button class="btn btn-green" onclick="saveConfig()"><i class="fas fa-save"></i> Guardar Config</button></div>
+<div style="margin-top:8px"><label>Prompt Personalizado (instrucciones extra para la IA — personalidad, tono, reglas)</label><textarea id="cfgPrompt" rows="5" placeholder="Ej: Eres un bot amigable y divertido. Usa emojis. Siempre ofrece productos destacados primero. Saluda por nombre al cliente."></textarea></div>
+<div style="margin-top:8px"><label><input type="checkbox" id="cfgPaused" style="width:auto"> Pausar Bot (los clientes no podran chatear)</label></div>
+
+<h3 style="font-size:.9rem;color:var(--muted);margin:20px 0 12px;text-transform:uppercase">Configuracion de IA</h3>
+<div class="grid2">
+<div>
+<label>Proveedor de IA</label>
+<select id="cfgAiProvider">
+<option value="cloudflare">Cloudflare AI (gratis, Llama 3.1)</option>
+<option value="anthropic">Anthropic Claude (requiere API key)</option>
+</select>
 </div>
+<div>
+<label>Modelo de IA</label>
+<select id="cfgAiModel">
+<option value="@cf/meta/llama-3.1-8b-instruct">Llama 3.1 8B (Cloudflare)</option>
+<option value="@cf/meta/llama-3.1-70b-instruct">Llama 3.1 70B (Cloudflare)</option>
+<option value="@cf/mistral/mistral-7b-instruct-v0.1">Mistral 7B (Cloudflare)</option>
+<option value="claude-3-haiku-20240307">Claude 3 Haiku (Anthropic)</option>
+<option value="claude-3-sonnet-20240229">Claude 3 Sonnet (Anthropic)</option>
+<option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet (Anthropic)</option>
+<option value="claude-3-opus-20240229">Claude 3 Opus (Anthropic)</option>
+</select>
+</div>
+</div>
+<div style="margin-top:8px"><label>Anthropic API Key (solo si usas Claude)</label><input type="password" id="cfgAnthropicKey" placeholder="sk-ant-..."></div>
+
+<div style="margin-top:16px"><button class="btn btn-green" onclick="saveConfig()"><i class="fas fa-save"></i> Guardar Toda la Configuracion</button></div>
+</div>
+
+<!-- URL del Bot -->
+<div class="card" id="botUrlCard">
+<div class="card-title"><i class="fas fa-link"></i> URL del Bot de Tienda</div>
+<p style="color:var(--muted);font-size:.85rem;margin-bottom:8px">Comparte esta URL con la tienda para que integren el chat en su web:</p>
+<div class="url-box">
+<code id="botUrl">https://sgc-tienda.pages.dev/admin</code>
+<button class="copy-btn" onclick="copyUrl('botUrl')"><i class="fas fa-copy"></i> Copiar</button>
+</div>
+<p style="color:var(--muted);font-size:.85rem;margin-top:12px;margin-bottom:8px">URL del chat widget (para embeber en iframe):</p>
+<div class="url-box">
+<code id="widgetUrl">https://sgc-tienda.pages.dev/chat?t=1</code>
+<button class="copy-btn" onclick="copyUrl('widgetUrl')"><i class="fas fa-copy"></i> Copiar</button>
+</div>
+<p style="color:var(--muted);font-size:.85rem;margin-top:12px;margin-bottom:8px">API del chat (para integracion custom):</p>
+<div class="url-box">
+<code id="apiUrl">https://sgc-tienda.activo.workers.dev/api/chat?t=1</code>
+<button class="copy-btn" onclick="copyUrl('apiUrl')"><i class="fas fa-copy"></i> Copiar</button>
+</div>
+</div>
+
+<!-- Estadisticas -->
 <div class="card">
 <div class="card-title"><i class="fas fa-chart-bar"></i> Estadisticas</div>
 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px" id="statsGrid">
@@ -183,13 +235,13 @@ tr:hover td{background:var(--bg2)}
 <div id="tab-demo" class="hidden">
 <div class="card">
 <div class="card-title"><i class="fas fa-comments"></i> Demo del Bot de Tienda</div>
-<div style="margin-bottom:12px"><label>Tienda</label><select id="demoTenant"></select></div>
+<div style="margin-bottom:12px"><label>Tienda</label><select id="demoTenant" onchange="resetDemo()"></select></div>
 <div id="demoChat" style="background:var(--bg2);border-radius:8px;padding:16px;height:400px;overflow-y:auto;margin-bottom:12px"></div>
 <div style="display:flex;gap:8px">
 <input id="demoInput" placeholder="Escribe un mensaje..." onkeypress="if(event.key==='Enter')sendDemo()" style="flex:1">
 <button class="btn btn-green" onclick="sendDemo()"><i class="fas fa-paper-plane"></i></button>
 </div>
-<button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="resetDemo()"><i class="fas fa-redo"></i> Reiniciar</button>
+<button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="resetDemo()"><i class="fas fa-redo"></i> Reiniciar conversacion</button>
 </div>
 </div>
 
@@ -218,10 +270,10 @@ async function api(path, opts = {}) {
   if (!res.ok) throw new Error(data.error || 'Error ' + res.status);
   return data;
 }
-function switchTab(tab) {
+function switchTab(e, tab) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('[id^="tab-"]').forEach(t => t.classList.add('hidden'));
-  event.target.classList.add('active');
+  e.target.classList.add('active');
   document.getElementById('tab-' + tab).classList.remove('hidden');
   if (tab === 'tenants') loadTenants();
   if (tab === 'products') { loadTenantSelectors(); loadProducts(); }
@@ -229,14 +281,18 @@ function switchTab(tab) {
   if (tab === 'config') { loadTenantSelectors(); loadConfig(); }
   if (tab === 'demo') { loadTenantSelectors(); resetDemo(); }
 }
+function copyUrl(id) {
+  const text = document.getElementById(id).textContent;
+  navigator.clipboard.writeText(text).then(() => toast('URL copiada', 'success'));
+}
 
 // === LOGIN ===
 document.getElementById('loginBtn').onclick = async () => {
-  const email = document.getElementById('loginEmail').value.trim();
+  const user = document.getElementById('loginUser').value.trim();
   const pass = document.getElementById('loginPass').value;
-  if (!email || !pass) return toast('Email y password requeridos', 'error');
+  if (!user || !pass) return toast('Usuario y contrasena requeridos', 'error');
   try {
-    const data = await api('/api/admin/login', { method: 'POST', body: JSON.stringify({ email, password: pass }) });
+    const data = await api('/api/admin/login', { method: 'POST', body: JSON.stringify({ username: user, password: pass }) });
     TOKEN = data.token;
     localStorage.setItem('sgc_tie_token', TOKEN);
     showApp(data.user);
@@ -245,7 +301,7 @@ document.getElementById('loginBtn').onclick = async () => {
 function showApp(user) {
   document.getElementById('loginScreen').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
-  document.getElementById('userInfo').textContent = user ? user.email : '';
+  document.getElementById('userInfo').textContent = user ? (user.username || user.email || 'admin') : '';
   loadTenants();
 }
 function logout() { localStorage.removeItem('sgc_tie_token'); TOKEN = ''; location.reload(); }
@@ -262,10 +318,11 @@ async function loadTenants() {
         <td>${escapeHtml(t.slug)}</td>
         <td>${escapeHtml(t.rubro || '-')}</td>
         <td>${t.bot_tienda_enabled ? '<span class="badge badge-green">Activado</span>' : '<span class="badge badge-red">Desactivado</span>'}</td>
-        <td>
+        <td style="white-space:nowrap">
           <button class="btn btn-sm ${t.bot_tienda_enabled ? 'btn-danger' : 'btn-green'}" onclick="toggleBot(${t.id}, ${!t.bot_tienda_enabled})">
             <i class="fas fa-${t.bot_tienda_enabled ? 'times' : 'check'}"></i> ${t.bot_tienda_enabled ? 'Desactivar' : 'Habilitar'}
           </button>
+          <button class="btn btn-outline btn-sm" onclick="goConfig(${t.id})"><i class="fas fa-cog"></i> Config</button>
         </td>
       </tr>`).join('');
   } catch (e) { toast(e.message, 'error'); }
@@ -277,6 +334,16 @@ async function toggleBot(tenantId, enabled) {
     loadTenants();
   } catch (e) { toast(e.message, 'error'); }
 }
+function goConfig(tid) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('[id^="tab-"]').forEach(t => t.classList.add('hidden'));
+  document.querySelectorAll('.tab')[3].classList.add('active');
+  document.getElementById('tab-config').classList.remove('hidden');
+  loadTenantSelectors().then(() => {
+    document.getElementById('cfgTenant').value = tid;
+    loadConfig();
+  });
+}
 
 // === TENANT SELECTORS ===
 async function loadTenantSelectors() {
@@ -285,6 +352,7 @@ async function loadTenantSelectors() {
     const opts = (data.tenants || []).map(t => `<option value="${t.id}">${escapeHtml(t.business_name)} (${t.slug})</option>`).join('');
     ['prodTenant', 'cfgTenant', 'demoTenant'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = opts; });
   } catch (e) {}
+  return Promise.resolve();
 }
 async function loadOrderTenantSelector() {
   try {
@@ -308,7 +376,7 @@ async function loadProducts() {
         <td>${escapeHtml(p.categoria || '-')}</td>
         <td>$${p.precio_oferta || p.precio}</td>
         <td>${p.activo ? '<span class="badge badge-green">Si</span>' : '<span class="badge badge-red">No</span>'}</td>
-        <td>
+        <td style="white-space:nowrap">
           <button class="btn btn-outline btn-sm" onclick="editProduct(${p.id})"><i class="fas fa-edit"></i></button>
           <button class="btn btn-danger btn-sm" onclick="deleteProduct(${p.id})"><i class="fas fa-trash"></i></button>
         </td>
@@ -411,7 +479,6 @@ async function viewOrder(id) {
       <p><strong>Metodo de pago:</strong> ${escapeHtml(o.metodo_pago||'-')}</p>
       <p><strong>Total:</strong> $${o.total}</p>
       <p><strong>Estado:</strong> ${o.estado} / ${o.estado_aprobacion}</p>
-      <p><strong>Observaciones:</strong> ${escapeHtml(o.observaciones||'-')}</p>
       <div style="margin-top:12px"><strong>Productos:</strong><ul style="margin-top:8px">${prods.map(p => `<li>${escapeHtml(p.nombre)} x${p.cantidad||1} — $${p.precio}</li>`).join('')}</ul></div>`;
     document.getElementById('orderDetail').classList.remove('hidden');
   } catch (e) { toast(e.message, 'error'); }
@@ -440,6 +507,12 @@ async function loadConfig() {
     document.getElementById('cfgWelcome').value = c.welcome_message || '';
     document.getElementById('cfgPrompt').value = c.custom_prompt || '';
     document.getElementById('cfgPaused').checked = c.bot_paused === 'true';
+    document.getElementById('cfgAiProvider').value = c.ai_provider || 'cloudflare';
+    document.getElementById('cfgAiModel').value = c.ai_model || '@cf/meta/llama-3.1-8b-instruct';
+    document.getElementById('cfgAnthropicKey').value = c.anthropic_api_key || '';
+    // Actualizar URLs
+    document.getElementById('widgetUrl').textContent = 'https://sgc-tienda.pages.dev/chat?t=' + tid;
+    document.getElementById('apiUrl').textContent = 'https://sgc-tienda.activo.workers.dev/api/chat?t=' + tid;
     loadStats(tid);
   } catch (e) { toast(e.message, 'error'); }
 }
@@ -453,6 +526,9 @@ async function saveConfig() {
     welcome_message: document.getElementById('cfgWelcome').value,
     custom_prompt: document.getElementById('cfgPrompt').value,
     bot_paused: document.getElementById('cfgPaused').checked ? 'true' : 'false',
+    ai_provider: document.getElementById('cfgAiProvider').value,
+    ai_model: document.getElementById('cfgAiModel').value,
+    anthropic_api_key: document.getElementById('cfgAnthropicKey').value,
   };
   try {
     await api('/api/admin/config', { method: 'PUT', body: JSON.stringify({ tenant_id: tid, config }) });
@@ -500,7 +576,7 @@ async function sendDemo() {
 
 // === INIT ===
 if (TOKEN) {
-  api('/api/admin/tenants').then(() => showApp({ email: 'admin' })).catch(() => { localStorage.removeItem('sgc_tie_token'); TOKEN = ''; });
+  api('/api/admin/tenants').then(() => showApp({ username: 'admin' })).catch(() => { localStorage.removeItem('sgc_tie_token'); TOKEN = ''; });
 }
 </script>
 </body>
