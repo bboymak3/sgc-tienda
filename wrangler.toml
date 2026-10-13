@@ -1,0 +1,19 @@
+name = "sgc-tienda"
+main = "src/worker.js"
+compatibility_date = "2024-09-25"
+account_id = "6fc12c9a89723c0039cf189380c0b02f"
+
+# D1 database — misma que sgc-saas (citas)
+[[d1_databases]]
+binding = "DB"
+database_name = "citas"
+database_id = "678b4adc-232d-43db-86ec-230828268161"
+
+# AI binding
+[ai]
+binding = "AI"
+
+# Variables
+[vars]
+JWT_SECRET = "alianza58_secret_2024"
+ADMIN_URL = "https://sgc-tienda.pages.dev"
