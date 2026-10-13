@@ -117,7 +117,7 @@ button:disabled{opacity:.5}
 <a id="waBtn" class="wa-btn" style="display:none" target="_blank"><i class="fab fa-whatsapp"></i> Hablar con una persona por WhatsApp</a>
 
 <script>
-const API = 'https://sgc-tienda.activo.workers.dev';
+const API = ''; // Same origin (Pages Advanced Mode)
 const params = new URLSearchParams(location.search);
 const TENANT = params.get('t') || 1;
 let history = [];

@@ -249,7 +249,7 @@ tr:hover td{background:var(--bg2)}
 </div>
 <p style="color:var(--muted);font-size:.85rem;margin-top:12px;margin-bottom:8px">API del chat (para integracion custom):</p>
 <div class="url-box">
-<code id="apiUrl">https://sgc-tienda.activo.workers.dev/api/chat?t=1</code>
+<code id="apiUrl">https://sgc-tienda.pages.dev/api/chat?t=1</code>
 <button class="copy-btn" onclick="copyUrl('apiUrl')"><i class="fas fa-copy"></i> Copiar</button>
 </div>
 </div>
@@ -289,7 +289,7 @@ tr:hover td{background:var(--bg2)}
 <div id="toast" class="toast"></div>
 
 <script>
-const API = 'https://sgc-tienda.activo.workers.dev';
+const API = ''; // Same origin (Pages Advanced Mode)
 let TOKEN = localStorage.getItem('sgc_tie_token') || '';
 let currentTenant = 1;
 let demoHistory = [];
@@ -583,7 +583,7 @@ async function loadConfig() {
     document.getElementById('cfgWaMessage').value = c.whatsapp_message || '';
     // Actualizar URLs
     document.getElementById('widgetUrl').textContent = 'https://sgc-tienda.pages.dev/chat?t=' + tid;
-    document.getElementById('apiUrl').textContent = 'https://sgc-tienda.activo.workers.dev/api/chat?t=' + tid;
+    document.getElementById('apiUrl').textContent = 'https://sgc-tienda.pages.dev/api/chat?t=' + tid;
     loadStats(tid);
   } catch (e) { toast(e.message, 'error'); }
 }
