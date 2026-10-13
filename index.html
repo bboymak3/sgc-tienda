@@ -1,11 +1,34 @@
 <!DOCTYPE html>
 <html><head>
-<meta http-equiv="refresh" content="0;url=/chat?t=1">
-<title>SGC Tienda</title>
-</head><body style="background:#0a0a0a;color:#22c55e;font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0">
-<div style="text-align:center">
-<h1>SGC Tienda</h1>
-<p>Redirigiendo al chat...</p>
-<a href="/chat?t=1" style="color:#22c55e">Click aqui si no redirige</a>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SGC Tienda — Bot de Pedidos</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Inter',sans-serif;background:#0a0a0a;color:#e8e8e8;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+a{text-decoration:none}
+.container{text-align:center;max-width:480px;width:100%}
+h1{font-size:2rem;font-weight:800;margin-bottom:8px}
+h1 .accent{color:#22c55e}
+.subtitle{color:#999;font-size:.9rem;margin-bottom:30px}
+.btn{display:block;width:100%;padding:16px;border-radius:12px;font-weight:700;font-size:1rem;text-align:center;margin-bottom:12px;border:none;cursor:pointer;font-family:inherit;text-decoration:none}
+.btn-admin{background:#22c55e;color:#042713}
+.btn-admin:hover{background:#fff}
+.btn-chat{background:#1a1a1a;color:#e8e8e8;border:1px solid #2a2a2a}
+.btn-chat:hover{border-color:#22c55e}
+.btn-desc{font-size:.78rem;color:#666;margin-top:-4px;margin-bottom:20px}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>SGC <span class="accent">Tienda</span></h1>
+<p class="subtitle">Bot de pedidos en linea con IA</p>
+<a href="/admin" class="btn btn-admin"><i class="fas fa-cog"></i> Panel Admin</a>
+<p class="btn-desc">Gestionar negocios, productos, pedidos y configuracion</p>
+<a href="/chat?t=1" class="btn btn-chat"><i class="fas fa-comment"></i> Chat Demo</a>
+<p class="btn-desc">Probar el bot de tienda (tenant 1)</p>
 </div>
-</body></html>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+</body>
+</html>

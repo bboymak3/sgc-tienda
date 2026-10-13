@@ -89,12 +89,39 @@ tr:hover td{background:var(--bg2)}
 <div id="tab-tenants">
 <div class="card">
 <div class="card-title"><i class="fas fa-store"></i> Tiendas Registradas
-<button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="loadTenants()"><i class="fas fa-sync"></i></button>
+<button class="btn btn-green btn-sm" style="margin-left:auto" onclick="showTenantForm()"><i class="fas fa-plus"></i> Nuevo Negocio</button>
+<button class="btn btn-outline btn-sm" onclick="loadTenants()"><i class="fas fa-sync"></i></button>
 </div>
 <div style="overflow-x:auto"><table>
 <thead><tr><th>ID</th><th>Nombre</th><th>Slug</th><th>Rubro</th><th>Bot Tienda</th><th>Acciones</th></tr></thead>
 <tbody id="tenantsBody"><tr><td colspan="6" style="text-align:center;padding:30px;color:var(--dim)">Cargando...</td></tr></tbody>
 </table></div>
+</div>
+
+<!-- Formulario crear negocio -->
+<div class="card hidden" id="tenantForm">
+<div class="card-title"><i class="fas fa-plus-circle"></i> Crear Nuevo Negocio</div>
+<div class="grid2">
+<div><label>Nombre del Negocio *</label><input id="newBizName" placeholder="Ej: Taller Juan Auto"></div>
+<div><label>Slug (identificador URL) *</label><input id="newBizSlug" placeholder="Ej: taller-juan-auto"></div>
+<div><label>Rubro</label>
+<select id="newBizRubro">
+<option value="taller">Taller Mecanico</option>
+<option value="tienda">Tienda / Retail</option>
+<option value="barberia">Barberia</option>
+<option value="clinica">Clinica</option>
+<option value="veterinaria">Veterinaria</option>
+<option value="spa">Spa</option>
+<option value="restaurante">Restaurante</option>
+<option value="otro">Otro</option>
+</select>
+</div>
+<div><label>WhatsApp (con codigo pais, sin +)</label><input id="newBizWa" placeholder="56973622291"></div>
+</div>
+<div style="margin-top:12px;display:flex;gap:8px">
+<button class="btn btn-green" onclick="createTenant()"><i class="fas fa-save"></i> Crear Negocio</button>
+<button class="btn btn-outline" onclick="document.getElementById('tenantForm').classList.add('hidden')">Cancelar</button>
+</div>
 </div>
 </div>
 
@@ -318,6 +345,36 @@ function showApp(user) {
 function logout() { localStorage.removeItem('sgc_tie_token'); TOKEN = ''; location.reload(); }
 
 // === TENANTS ===
+function showTenantForm() {
+  document.getElementById('tenantForm').classList.remove('hidden');
+  document.getElementById('newBizName').value = '';
+  document.getElementById('newBizSlug').value = '';
+  document.getElementById('newBizWa').value = '';
+  document.getElementById('newBizRubro').value = 'taller';
+  // Auto-generar slug desde el nombre
+  document.getElementById('newBizName').oninput = function() {
+    const slug = this.value.toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-');
+    document.getElementById('newBizSlug').value = slug;
+  };
+}
+async function createTenant() {
+  const name = document.getElementById('newBizName').value.trim();
+  const slug = document.getElementById('newBizSlug').value.trim().toLowerCase();
+  const rubro = document.getElementById('newBizRubro').value;
+  const wa = document.getElementById('newBizWa').value.trim();
+  if (!name || !slug) return toast('Nombre y slug son requeridos', 'error');
+  try {
+    const data = await api('/api/admin/tenants', { method: 'POST', body: JSON.stringify({ business_name: name, slug, rubro, whatsapp_number: wa }) });
+    toast('Negocio creado: ' + name + ' (ID: ' + data.id + ')', 'success');
+    document.getElementById('tenantForm').classList.add('hidden');
+    loadTenants();
+    // Mostrar URLs
+    toast('Chat URL: https://sgc-tienda.pages.dev/chat?t=' + data.id, 'success');
+  } catch (e) { toast(e.message, 'error'); }
+}
 async function loadTenants() {
   try {
     const data = await api('/api/admin/tenants');

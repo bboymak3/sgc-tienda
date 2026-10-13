@@ -329,6 +329,13 @@ export default {
       return handleToggleBot(request, env);
     }
 
+    // POST /api/admin/tenants — Crear nuevo negocio
+    if (path === '/api/admin/tenants' && method === 'POST') {
+      const user = await getUser(request, env);
+      if (!user) return jsonError('No autorizado', 401);
+      return handleCreateTenant(request, env);
+    }
+
     // GET /api/admin/products — Listar productos del tenant
     if (path === '/api/admin/products' && method === 'GET') {
       const user = await getUser(request, env);
@@ -718,6 +725,76 @@ async function handleListTenants(request, env) {
   }
 
   return json({ tenants });
+}
+
+async function handleCreateTenant(request, env) {
+  try {
+    const body = await request.json();
+    const { business_name, slug, rubro, whatsapp_number } = body;
+
+    if (!business_name || !slug) {
+      return jsonError('business_name y slug son requeridos', 400);
+    }
+
+    // Verificar que el slug no exista
+    const existing = await env.DB.prepare('SELECT id FROM tenants WHERE slug = ?').bind(slug.trim().toLowerCase()).first();
+    if (existing) {
+      return jsonError('Ya existe un negocio con ese slug', 409);
+    }
+
+    // Crear el tenant
+    const result = await env.DB.prepare(
+      'INSERT INTO tenants (slug, business_name, rubro, status, ai_provider, pais, timezone) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    ).bind(
+      slug.trim().toLowerCase(),
+      business_name.trim(),
+      rubro || 'taller',
+      'active',
+      'cloudflare',
+      'CL',
+      'America/Santiago'
+    ).run();
+
+    const tenantId = result.meta.last_row_id;
+
+    // Crear config inicial para el bot de tienda
+    const defaultConfig = [
+      ['bot_enabled', 'false'],
+      ['bot_name', 'BotTienda'],
+      ['welcome_message', 'Hola! Bienvenido a ' + business_name.trim() + '. En que puedo ayudarte?'],
+      ['custom_prompt', ''],
+      ['metodos_pago', 'efectivo,transferencia,transbank'],
+      ['moneda', 'CLP'],
+      ['color_primario', '#22c55e'],
+      ['ai_provider', 'cloudflare'],
+      ['ai_model', '@cf/meta/llama-3.1-8b-instruct'],
+      ['bot_paused', 'false'],
+      ['whatsapp_enabled', whatsapp_number ? 'true' : 'false'],
+      ['whatsapp_number', whatsapp_number || ''],
+      ['whatsapp_message', 'Hola, quiero hablar con una persona real'],
+    ];
+
+    for (const [clave, valor] of defaultConfig) {
+      await env.DB.prepare(
+        'INSERT INTO sgc_tie_Config (tenant_id, clave, valor) VALUES (?, ?, ?)'
+      ).bind(tenantId, clave, valor).run();
+    }
+
+    // Crear categoria por defecto
+    await env.DB.prepare(
+      'INSERT INTO sgc_tie_Categorias (tenant_id, nombre, icono, orden) VALUES (?, ?, ?, ?)'
+    ).bind(tenantId, 'General', 'fas fa-tag', 0).run();
+
+    return json({
+      success: true,
+      id: tenantId,
+      message: 'Negocio creado correctamente. Bot de tienda desactivado por defecto.',
+      chat_url: 'https://sgc-tienda.pages.dev/chat?t=' + tenantId,
+      admin_url: 'https://sgc-tienda.pages.dev/admin',
+    });
+  } catch (e) {
+    return jsonError('Error al crear negocio: ' + e.message, 500);
+  }
 }
 
 async function handleToggleBot(request, env) {
