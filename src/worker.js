@@ -721,7 +721,39 @@ async function handleListTenants(request, env) {
     const cfg = await env.DB.prepare(
       "SELECT valor FROM sgc_tie_Config WHERE tenant_id = ? AND clave = 'bot_enabled'"
     ).bind(t.id).first();
-    t.bot_tienda_enabled = cfg?.valor === 'true';
+
+    if (cfg) {
+      t.bot_tienda_enabled = cfg.valor === 'true';
+    } else {
+      // Auto-crear config inicial si no existe (para tenants registrados desde sgc-saas)
+      t.bot_tienda_enabled = false;
+      try {
+        const defaultConfig = [
+          ['bot_enabled', 'false'],
+          ['bot_name', 'BotTienda'],
+          ['welcome_message', 'Hola! Bienvenido a ' + (t.business_name || 'nuestra tienda') + '. En que puedo ayudarte?'],
+          ['custom_prompt', ''],
+          ['metodos_pago', 'efectivo,transferencia,transbank'],
+          ['moneda', 'CLP'],
+          ['color_primario', '#22c55e'],
+          ['ai_provider', 'cloudflare'],
+          ['ai_model', '@cf/meta/llama-3.1-8b-instruct'],
+          ['bot_paused', 'false'],
+          ['whatsapp_enabled', 'false'],
+          ['whatsapp_number', ''],
+          ['whatsapp_message', 'Hola, quiero hablar con una persona real'],
+        ];
+        for (const [clave, valor] of defaultConfig) {
+          await env.DB.prepare(
+            "INSERT OR IGNORE INTO sgc_tie_Config (tenant_id, clave, valor) VALUES (?, ?, ?)"
+          ).bind(t.id, clave, valor).run();
+        }
+        // Crear categoria por defecto
+        await env.DB.prepare(
+          "INSERT OR IGNORE INTO sgc_tie_Categorias (tenant_id, nombre, icono, orden) VALUES (?, 'General', 'fas fa-tag', 0)"
+        ).bind(t.id).run();
+      } catch (e) {}
+    }
   }
 
   return json({ tenants });
