@@ -127,6 +127,136 @@ ${customPrompt}
 ${waEnabled && waNumber ? `Si el cliente pide hablar con una persona real, dile: "Puedes contactarnos por WhatsApp al ${waNumber} y te atenderemos directamente."` : ''}`;
 }
 
+// === Motor de chat sin IA (fallback) ===
+// Procesa pedidos sin necesidad de IA, usando pattern matching
+async function handleChatWithoutAI(messages, productos, config, conversation, env) {
+  const lastMsg = messages[messages.length - 1];
+  const userText = (typeof lastMsg === 'string' ? lastMsg : (lastMsg.content || '')).toLowerCase().trim();
+  const history = messages.slice(-6).map(m => typeof m === 'string' ? m : (m.content || ''));
+  const fullContext = history.join(' ').toLowerCase();
+
+  // Productos destacados y lista
+  const prodList = productos.map((p, i) => `${i + 1}. ${p.nombre} - $${p.precio_oferta || p.precio}`).join('\n');
+  const prodNames = productos.map(p => p.nombre.toLowerCase());
+
+  // Detectar si el usuario quiere pedir/hacer un pedido
+  const wantsToOrder = /quiero|pedir|comprar|llevar|pedido|ordenar|necesito|dame|vendo/.test(userText);
+  // Detectar si menciona un producto
+  let mentionedProducts = [];
+  for (const p of productos) {
+    const pName = p.nombre.toLowerCase();
+    // Buscar por nombre o por número
+    const numMatch = new RegExp('\\b' + (productos.indexOf(p) + 1) + '\\b').test(userText);
+    if (userText.includes(pName) || numMatch || (fullContext.includes(pName) && wantsToOrder)) {
+      // Buscar cantidad
+      let qty = 1;
+      const qtyMatch = userText.match(/(\d+)\s*(?:x\s*)?(?:de\s+)?(?:un[ao]s?\s+)?/);
+      if (qtyMatch && parseInt(qtyMatch[1]) <= 10) qty = parseInt(qtyMatch[1]);
+      const qtyText = userText.match(/(\d+)\s*(?:un[ao]s?\s+|x\s*)/);
+      if (qtyText) qty = parseInt(qtyText[1]);
+      mentionedProducts.push({ ...p, cantidad: qty });
+    }
+  }
+
+  // Detectar si ya dio datos de cliente
+  const hasName = /me llamo|mi nombre|soy\s+\w+/i.test(fullContext) || /\b[A-Z][a-z]+\s+[A-Z][a-z]+\b/.test(history[history.length - 1] || '');
+  const hasPhone = /(\+?56)?\s?9\s?\d{4}\s?\d{4}|\+?\d{8,}/.test(fullContext);
+  const hasAddress = /direccion|calle|av|avenida|pasaje|departamento|domicilio|entrega|envio/i.test(fullContext) || /(calle|av|avenida|pasaje)\s+\w+/i.test(history[history.length - 1] || '');
+
+  // Si hay productos mencionados Y datos de cliente, crear el pedido
+  if (mentionedProducts.length > 0 && hasName && hasPhone && hasAddress) {
+    // Extraer datos del contexto
+    let clienteNombre = 'Cliente';
+    const nameMatch = fullContext.match(/(?:me llamo|mi nombre es|soy)\s+([a-záéíóúñ\s]+)/i);
+    if (nameMatch) clienteNombre = nameMatch[1].trim().substring(0, 50);
+
+    let clienteTelefono = '';
+    const phoneMatch = fullContext.match(/(\+?56?\s?9\s?\d{4}\s?\d{4}|\+?\d{8,})/);
+    if (phoneMatch) clienteTelefono = phoneMatch[1].replace(/\s/g, '');
+
+    let clienteDireccion = '';
+    const addrMatch = history[history.length - 1].match(/(?:direccion|calle|av|avenida|pasaje|domicilio|entrega|envio)[:\s]+([^,]+)/i);
+    if (addrMatch) clienteDireccion = addrMatch[1].trim();
+
+    const total = mentionedProducts.reduce((sum, p) => sum + (p.precio_oferta || p.precio) * p.cantidad, 0);
+    const pedidoData = {
+      cliente_nombre: clienteNombre,
+      cliente_telefono: clienteTelefono,
+      cliente_direccion: clienteDireccion,
+      productos: mentionedProducts.map(p => ({ nombre: p.nombre, cantidad: p.cantidad, precio: p.precio_oferta || p.precio })),
+      total: total,
+      metodo_pago: 'pendiente'
+    };
+
+    // Crear el pedido en la DB
+    try {
+      const result = await env.DB.prepare(
+        `INSERT INTO sgc_tie_Pedidos (tenant_id, cliente_nombre, cliente_telefono, cliente_direccion, productos_json, total, metodo_pago, estado, canal)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'pendiente', 'chat_online')`
+      ).bind(
+        config.tenant_id || 1,
+        pedidoData.cliente_nombre,
+        pedidoData.cliente_telefono,
+        pedidoData.cliente_direccion,
+        JSON.stringify(pedidoData.productos),
+        total,
+        pedidoData.metodo_pago
+      ).run();
+
+      if (conversation) {
+        await env.DB.prepare(
+          'UPDATE sgc_tie_ChatConversations SET pedido_id = ?, cliente_nombre = ?, cliente_telefono = ?, updated_at = datetime(\'now\') WHERE id = ?'
+        ).bind(result.meta.last_row_id, pedidoData.cliente_nombre, pedidoData.cliente_telefono, conversation.id).run();
+      }
+    } catch (e) {
+      console.error('Error creando pedido:', e.message);
+    }
+
+    // Confirmar al usuario
+    const prodSummary = mentionedProducts.map(p => `${p.cantidad}x ${p.nombre} — $${(p.precio_oferta || p.precio) * p.cantidad}`).join('\n');
+    return `¡Pedido confirmado! 🎉\n\nResumen:\n${prodSummary}\n\nTotal: $${total}\n\nGracias ${pedidoData.cliente_nombre}! Tu pedido #${result?.meta?.last_row_id || '?'} ha sido registrado. Nos pondremos en contacto al ${clienteTelefono} para coordinar la entrega y el pago.`;
+  }
+
+  // Si hay productos mencionados pero faltan datos
+  if (mentionedProducts.length > 0) {
+    let resp = `¡Genial! Has elegido:\n`;
+    resp += mentionedProducts.map(p => `${p.cantidad}x ${p.nombre} — $${(p.precio_oferta || p.precio) * p.cantidad}`).join('\n');
+    resp += `\n\nTotal: $${mentionedProducts.reduce((s, p) => s + (p.precio_oferta || p.precio) * p.cantidad, 0)}\n\n`;
+    const missing = [];
+    if (!hasName) missing.push('tu nombre completo');
+    if (!hasPhone) missing.push('tu telefono');
+    if (!hasAddress) missing.push('tu direccion de entrega');
+    if (missing.length > 0) resp += `Para confirmar el pedido, necesitamos: ${missing.join(', ')}.`;
+    return resp;
+  }
+
+  // Si pregunta por productos
+  if (/producto|que tienen|catalogo|lista|ver|mostrar|precio|cuanto|cuales/.test(userText) || userText === 'hola' || userText.length < 10) {
+    if (productos.length === 0) return 'Hola! Por el momento no tenemos productos cargados. Vuelve mas tarde.';
+    let resp = 'Hola! Bienvenido a nuestra tienda. Estos son nuestros productos disponibles:\n\n';
+    resp += prodList;
+    resp += '\n\nPara hacer un pedido, dime el numero o nombre del producto y tu nombre, telefono y direccion de entrega.';
+    if (config.whatsapp_enabled === 'true' && config.whatsapp_number) {
+      resp += `\n\nSi prefieres hablar con una persona real, escribenos por WhatsApp al ${config.whatsapp_number}.`;
+    }
+    return resp;
+  }
+
+  // Si menciona WhatsApp o persona real
+  if (/whatsapp|persona real|humano|hablar con|atencion|contacto/.test(userText)) {
+    if (config.whatsapp_enabled === 'true' && config.whatsapp_number) {
+      return `Puedes contactarnos por WhatsApp al ${config.whatsapp_number} y te atenderemos directamente. 😊`;
+    }
+    return 'Lo siento, no tenemos WhatsApp disponible en este momento. ¿Te puedo ayudar con algun producto?';
+  }
+
+  // Respuesta por defecto
+  if (productos.length > 0) {
+    return 'Puedo ayudarte con tus pedidos. Estos son nuestros productos:\n\n' + prodList + '\n\nDime que producto quieres y tus datos para la entrega.';
+  }
+  return 'Hola! Soy el bot de la tienda. Por el momento no tenemos productos disponibles. Vuelve mas tarde.';
+}
+
 // === Router ===
 export default {
   async fetch(request, env) {
@@ -354,6 +484,7 @@ async function handleChat(request, env, url) {
 
     // Llamar a IA: Cloudflare AI o Anthropic Claude
     let aiResponse = '';
+    let aiWorked = false;
     try {
       const aiMessages = [
         { role: 'system', content: systemPrompt },
@@ -389,24 +520,25 @@ async function handleChat(request, env, url) {
         });
         const claudeData = await response.json();
         aiResponse = claudeData.content?.[0]?.text || 'Lo siento, no pude procesar tu mensaje.';
+        aiWorked = true;
       } else {
         // Usar Cloudflare AI (default)
         const aiResult = await env.AI.run(aiModel, {
           messages: aiMessages,
           max_tokens: 500,
         });
-        aiResponse = aiResult.response || 'Lo siento, no pude procesar tu mensaje. Intenta de nuevo.';
+        if (aiResult && aiResult.response) {
+          aiResponse = aiResult.response;
+          aiWorked = true;
+        }
       }
     } catch (e) {
       console.error('AI Error:', e.message || e.toString || JSON.stringify(e));
-      // Si la IA falla, dar una respuesta util basada en los productos
-      let fallback = 'Hola! En este momento tengo problemas para responder con IA, pero puedo ayudarte. ';
-      if (productosList.length > 0) {
-        fallback += 'Estos son nuestros productos disponibles:\n';
-        fallback += productosList.map((p, i) => `${i+1}. ${p.nombre} - $${p.precio_oferta || p.precio}`).join('\n');
-        fallback += '\n\nPara hacer un pedido, dime tu nombre, telefono y direccion de entrega.';
-      }
-      aiResponse = fallback;
+    }
+
+    // Si la IA no funciono, usar motor de pedidos sin IA
+    if (!aiWorked) {
+      aiResponse = await handleChatWithoutAI(messages, productosList, aiConfig, conversation, env);
     }
 
     // Verificar si la respuesta contiene un pedido
