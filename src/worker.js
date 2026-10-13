@@ -541,40 +541,84 @@ async function handleChat(request, env, url) {
       aiResponse = await handleChatWithoutAI(messages, productosList, aiConfig, conversation, env);
     }
 
-    // Verificar si la respuesta contiene un pedido
+    // Verificar si la respuesta contiene un pedido con formato [PEDIDO]
     const pedidoMatch = aiResponse.match(/\[PEDIDO\](\{.*?\})\[\/PEDIDO\]/s);
     if (pedidoMatch) {
       try {
         const pedidoData = JSON.parse(pedidoMatch[1]);
-        // Crear el pedido en la DB
         const total = pedidoData.productos?.reduce((sum, p) => sum + (p.precio * (p.cantidad || 1)), 0) || 0;
         const result = await env.DB.prepare(
           `INSERT INTO sgc_tie_Pedidos (tenant_id, cliente_nombre, cliente_telefono, cliente_email, cliente_direccion, cliente_referencia, productos_json, total, metodo_pago, estado, observaciones)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pendiente', ?)`
         ).bind(
-          tenantId,
-          pedidoData.cliente_nombre || '',
-          pedidoData.cliente_telefono || '',
-          pedidoData.cliente_email || '',
-          pedidoData.cliente_direccion || '',
-          pedidoData.cliente_referencia || '',
-          JSON.stringify(pedidoData.productos || []),
-          total,
-          pedidoData.metodo_pago || 'pendiente',
-          pedidoData.observaciones || ''
+          tenantId, pedidoData.cliente_nombre || '', pedidoData.cliente_telefono || '',
+          pedidoData.cliente_email || '', pedidoData.cliente_direccion || '', pedidoData.cliente_referencia || '',
+          JSON.stringify(pedidoData.productos || []), total, pedidoData.metodo_pago || 'pendiente', pedidoData.observaciones || ''
         ).run();
-
-        // Actualizar conversación con el pedido
         if (conversation) {
-          await env.DB.prepare(
-            'UPDATE sgc_tie_ChatConversations SET pedido_id = ?, cliente_nombre = ?, cliente_telefono = ?, updated_at = datetime(\'now\') WHERE id = ?'
-          ).bind(result.meta.last_row_id, pedidoData.cliente_nombre, pedidoData.cliente_telefono, conversation.id).run();
+          await env.DB.prepare('UPDATE sgc_tie_ChatConversations SET pedido_id = ?, cliente_nombre = ?, cliente_telefono = ?, updated_at = datetime(\'now\') WHERE id = ?')
+            .bind(result.meta.last_row_id, pedidoData.cliente_nombre, pedidoData.cliente_telefono, conversation.id).run();
+        }
+        aiResponse = aiResponse.replace(/\[PEDIDO\].*?\[\/PEDIDO\]/s, '').trim();
+      } catch (e) {}
+    }
+
+    // Si la IA respondió pero NO generó [PEDIDO], intentar detectar pedido por contexto
+    if (aiWorked && !pedidoMatch) {
+      const fullContext = messages.map(m => typeof m === 'string' ? m : (m.content || '')).join(' ').toLowerCase();
+      // Detectar si la IA confirma un pedido
+      const isConfirming = /confirmado|confirmad|tu pedido|pedido esta|registrad|agendad|hemos registr|procesad/.test(aiResponse.toLowerCase());
+      if (isConfirming) {
+        // Extraer datos del contexto de la conversación
+        let clienteNombre = '';
+        const nameMatch = fullContext.match(/(?:me llamo|mi nombre es|soy)\s+([a-záéíóúñ\s]+)/i);
+        if (nameMatch) clienteNombre = nameMatch[1].trim().substring(0, 50);
+
+        let clienteTelefono = '';
+        const phoneMatch = fullContext.match(/(\+?56?\s?9\s?\d{4}\s?\d{4}|\+?\d{8,})/);
+        if (phoneMatch) clienteTelefono = phoneMatch[1].replace(/\s/g, '');
+
+        let clienteDireccion = '';
+        const addrMatch = fullContext.match(/(?:direccion|calle|av|avenida|pasaje|domicilio|entrega|envio)[:\s]+([^,\n]+)/i);
+        if (addrMatch) clienteDireccion = addrMatch[1].trim();
+
+        // Detectar productos mencionados
+        let detectedProducts = [];
+        for (const p of productosList) {
+          const pName = p.nombre.toLowerCase();
+          if (fullContext.includes(pName)) {
+            let qty = 1;
+            const qtyRegex = new RegExp('(\\d+)\\s*(?:x\\s*)?(?:de\\s+)?' + pName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+            const qtyMatch = fullContext.match(qtyRegex);
+            if (qtyMatch) qty = parseInt(qtyMatch[1]);
+            detectedProducts.push({ nombre: p.nombre, cantidad: qty, precio: p.precio_oferta || p.precio });
+          }
         }
 
-        // Limpiar el JSON del mensaje
-        aiResponse = aiResponse.replace(/\[PEDIDO\].*?\[\/PEDIDO\]/s, '').trim();
-      } catch (e) {
-        // Si falla el parseo, enviar la respuesta tal cual
+        // Solo crear el pedido si tenemos al menos nombre y teléfono
+        if (clienteNombre && clienteTelefono && detectedProducts.length > 0) {
+          const total = detectedProducts.reduce((sum, p) => sum + p.precio * p.cantidad, 0);
+          // Detectar metodo de pago
+          let metodoPago = 'pendiente';
+          if (/efectivo/.test(fullContext)) metodoPago = 'efectivo';
+          else if (/transferencia/.test(fullContext)) metodoPago = 'transferencia';
+          else if (/transbank|webpay|tarjeta/.test(fullContext)) metodoPago = 'transbank';
+
+          try {
+            const result = await env.DB.prepare(
+              `INSERT INTO sgc_tie_Pedidos (tenant_id, cliente_nombre, cliente_telefono, cliente_direccion, productos_json, total, metodo_pago, estado, canal)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'pendiente', 'chat_online')`
+            ).bind(tenantId, clienteNombre, clienteTelefono, clienteDireccion, JSON.stringify(detectedProducts), total, metodoPago).run();
+
+            if (conversation) {
+              await env.DB.prepare('UPDATE sgc_tie_ChatConversations SET pedido_id = ?, cliente_nombre = ?, cliente_telefono = ?, updated_at = datetime(\'now\') WHERE id = ?')
+                .bind(result.meta.last_row_id, clienteNombre, clienteTelefono, conversation.id).run();
+            }
+            console.log('Pedido creado desde IA:', result.meta.last_row_id);
+          } catch (e) {
+            console.error('Error creando pedido desde IA:', e.message);
+          }
+        }
       }
     }
 
