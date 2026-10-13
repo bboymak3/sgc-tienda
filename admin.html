@@ -172,6 +172,13 @@ tr:hover td{background:var(--bg2)}
 <div style="margin-top:8px"><label>Prompt Personalizado (instrucciones extra para la IA — personalidad, tono, reglas)</label><textarea id="cfgPrompt" rows="5" placeholder="Ej: Eres un bot amigable y divertido. Usa emojis. Siempre ofrece productos destacados primero. Saluda por nombre al cliente."></textarea></div>
 <div style="margin-top:8px"><label><input type="checkbox" id="cfgPaused" style="width:auto"> Pausar Bot (los clientes no podran chatear)</label></div>
 
+<h3 style="font-size:.9rem;color:var(--muted);margin:20px 0 12px;text-transform:uppercase">WhatsApp de Contacto</h3>
+<div class="grid2">
+<div><label><input type="checkbox" id="cfgWaEnabled" style="width:auto;margin-right:6px"> Habilitar boton de WhatsApp en el chat</label></div>
+<div><label>Numero de WhatsApp (con codigo pais, sin +)</label><input id="cfgWaNumber" placeholder="56973622291"></div>
+</div>
+<div style="margin-top:8px"><label>Mensaje predefinido de WhatsApp</label><input id="cfgWaMessage" placeholder="Hola, quiero hablar con una persona real sobre mi pedido"></div>
+
 <h3 style="font-size:.9rem;color:var(--muted);margin:20px 0 12px;text-transform:uppercase">Configuracion de IA</h3>
 <div class="grid2">
 <div>
@@ -240,6 +247,9 @@ tr:hover td{background:var(--bg2)}
 <div style="display:flex;gap:8px">
 <input id="demoInput" placeholder="Escribe un mensaje..." onkeypress="if(event.key==='Enter')sendDemo()" style="flex:1">
 <button class="btn btn-green" onclick="sendDemo()"><i class="fas fa-paper-plane"></i></button>
+</div>
+<div id="demoWhatsApp" class="hidden" style="margin-top:8px">
+<a id="demoWaLink" href="#" target="_blank" class="btn btn-sm" style="background:#25D366;color:#fff;width:100%;justify-content:center"><i class="fab fa-whatsapp"></i> Hablar con una persona por WhatsApp</a>
 </div>
 <button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="resetDemo()"><i class="fas fa-redo"></i> Reiniciar conversacion</button>
 </div>
@@ -510,6 +520,9 @@ async function loadConfig() {
     document.getElementById('cfgAiProvider').value = c.ai_provider || 'cloudflare';
     document.getElementById('cfgAiModel').value = c.ai_model || '@cf/meta/llama-3.1-8b-instruct';
     document.getElementById('cfgAnthropicKey').value = c.anthropic_api_key || '';
+    document.getElementById('cfgWaEnabled').checked = c.whatsapp_enabled === 'true';
+    document.getElementById('cfgWaNumber').value = c.whatsapp_number || '';
+    document.getElementById('cfgWaMessage').value = c.whatsapp_message || '';
     // Actualizar URLs
     document.getElementById('widgetUrl').textContent = 'https://sgc-tienda.pages.dev/chat?t=' + tid;
     document.getElementById('apiUrl').textContent = 'https://sgc-tienda.activo.workers.dev/api/chat?t=' + tid;
@@ -529,6 +542,9 @@ async function saveConfig() {
     ai_provider: document.getElementById('cfgAiProvider').value,
     ai_model: document.getElementById('cfgAiModel').value,
     anthropic_api_key: document.getElementById('cfgAnthropicKey').value,
+    whatsapp_enabled: document.getElementById('cfgWaEnabled').checked ? 'true' : 'false',
+    whatsapp_number: document.getElementById('cfgWaNumber').value,
+    whatsapp_message: document.getElementById('cfgWaMessage').value,
   };
   try {
     await api('/api/admin/config', { method: 'PUT', body: JSON.stringify({ tenant_id: tid, config }) });
@@ -550,6 +566,19 @@ function resetDemo() {
   demoHistory = [{ role: 'assistant', content: 'Hola! Bienvenido a nuestra tienda. En que puedo ayudarte?' }];
   const chat = document.getElementById('demoChat');
   chat.innerHTML = '<div style="margin-bottom:8px;padding:8px 12px;background:var(--bg3);border-radius:8px;display:inline-block">Hola! Bienvenido a nuestra tienda. En que puedo ayudarte?</div>';
+  // Cargar config de WhatsApp del tenant
+  const tid = document.getElementById('demoTenant')?.value || 1;
+  api('/api/config?t=' + tid).then(data => {
+    const c = data.config || {};
+    const waDiv = document.getElementById('demoWhatsApp');
+    if (c.whatsapp_enabled === 'true' && c.whatsapp_number) {
+      const msg = encodeURIComponent(c.whatsapp_message || 'Hola, quiero hablar con una persona real');
+      document.getElementById('demoWaLink').href = 'https://wa.me/' + c.whatsapp_number + '?text=' + msg;
+      waDiv.classList.remove('hidden');
+    } else {
+      waDiv.classList.add('hidden');
+    }
+  }).catch(() => {});
 }
 async function sendDemo() {
   const input = document.getElementById('demoInput');

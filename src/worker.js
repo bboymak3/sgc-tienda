@@ -94,6 +94,8 @@ async function getSystemPrompt(env, tenantId, businessName) {
   const customPrompt = config.custom_prompt || '';
   const moneda = config.moneda || 'CLP';
   const metodosPago = config.metodos_pago || 'efectivo,transferencia';
+  const waNumber = config.whatsapp_number || '';
+  const waEnabled = config.whatsapp_enabled === 'true';
 
   let productosText = 'No hay productos cargados aún.';
   if (productos.length > 0) {
@@ -120,7 +122,9 @@ MONEDA: ${moneda}
 Cuando confirmes un pedido, responde con un JSON al final del mensaje en esta formato exacto:
 [PEDIDO]{"cliente_nombre":"","cliente_telefono":"","cliente_direccion":"","productos":[{"nombre":"","cantidad":1,"precio":0}],"total":0,"metodo_pago":""}[/PEDIDO]
 
-${customPrompt}`;
+${customPrompt}
+
+${waEnabled && waNumber ? `Si el cliente pide hablar con una persona real, dile: "Puedes contactarnos por WhatsApp al ${waNumber} y te atenderemos directamente."` : ''}`;
 }
 
 // === Router ===
@@ -339,6 +343,15 @@ async function handleChat(request, env, url) {
       aiConfig[row.clave] = row.valor;
     }
 
+    // Obtener productos para fallback
+    let productosList = [];
+    try {
+      const prodResult = await env.DB.prepare(
+        'SELECT nombre, precio, precio_oferta FROM sgc_tie_Productos WHERE activo = 1 AND tenant_id = ? ORDER BY orden, id'
+      ).bind(tenantId).all();
+      productosList = prodResult.results || [];
+    } catch (e) {}
+
     // Llamar a IA: Cloudflare AI o Anthropic Claude
     let aiResponse = '';
     try {
@@ -385,7 +398,15 @@ async function handleChat(request, env, url) {
         aiResponse = aiResult.response || 'Lo siento, no pude procesar tu mensaje. Intenta de nuevo.';
       }
     } catch (e) {
-      aiResponse = 'Hola! Soy el bot de la tienda. En este momento estoy teniendo problemas tecnicos. Por favor intenta mas tarde.';
+      console.error('AI Error:', e.message || e.toString || JSON.stringify(e));
+      // Si la IA falla, dar una respuesta util basada en los productos
+      let fallback = 'Hola! En este momento tengo problemas para responder con IA, pero puedo ayudarte. ';
+      if (productosList.length > 0) {
+        fallback += 'Estos son nuestros productos disponibles:\n';
+        fallback += productosList.map((p, i) => `${i+1}. ${p.nombre} - $${p.precio_oferta || p.precio}`).join('\n');
+        fallback += '\n\nPara hacer un pedido, dime tu nombre, telefono y direccion de entrega.';
+      }
+      aiResponse = fallback;
     }
 
     // Verificar si la respuesta contiene un pedido
