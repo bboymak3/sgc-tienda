@@ -1,23 +1,38 @@
 # SGC Tienda — Bot de Pedidos en Línea
 
-Bot de IA para tiendas que muestra catálogo de productos con fotos, toma pedidos automáticamente y gestiona el flujo completo: carrito, checkout, aprobación de pago y despacho.
+Bot de IA para tiendas: catálogo con fotos, carrito, checkout, aprobación de pago y despacho.
 
-## URLs
-- Landing: https://sgc-tienda.pages.dev
-- Chat: https://sgc-tienda.pages.dev/chat?t=1
-- Admin: https://sgc-tienda.pages.dev/admin (admin/admin123)
+## 🚀 URLs
 
-## Tenant activo: Calce Perfecto Trexon (OptimusBot)
-- 27 productos (pisos de vehículo 2026)
-- 3 fotos por producto en R2 (84 fotos total)
-- Pagos: efectivo, transferencia, transbank
+| Servicio | URL |
+|----------|-----|
+| **Bot de Tienda** | https://botproducto.makeseo.app |
+| **Chat público** | https://botproducto.makeseo.app/chat?t=1 |
+| **Panel Admin** | https://botproducto.makeseo.app/admin |
+| **Hosting** | Cloudflare Pages (Advanced Mode) |
+
+## 🌐 Ecosistema makeseo.app
+
+| Subdominio | Proyecto | Función |
+|------------|----------|---------|
+| makeseo.app | MakeSEO Academy | Academia + Landing |
+| bot.makeseo.app | SGC SaaS | Bot WhatsApp citas |
+| botproducto.makeseo.app | SGC Tienda (este) | Bot productos |
+| flujos.makeseo.app | SGC Flujos | Motor flujos |
+
+## 📋 Características
+
+- 27 productos con 3 fotos cada uno (R2)
 - Galería con scroll horizontal
-- Carrito que se vacía al completar pedido
+- Carrito + checkout + pago obligatorio (método + referencia)
+- Bot OptimusBot (Calce Perfecto Trexon)
+- Fotos bajo demanda [FOTO:] y [LISTA]
+- Integrado en optimuscars.cl/tienda
 
-## Ecosistema
-- SGC SaaS: sgc-saas.pages.dev (citas WhatsApp)
-- SGC Flujos: sgc-flujos.pages.dev (flujos deterministas)
-- MakeSEO Academy: makeseo-mml.pages.dev
+## 🔐 Admin
+
+- **URL:** https://botproducto.makeseo.app/admin
+- **Usuario:** admin / **Contraseña:** admin123
 
 ---
-SGC Tienda · Edward Valencia · @makeseo
+**SGC Tienda · makeseo.app · Edward Valencia · @makeseo**
