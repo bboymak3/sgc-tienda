@@ -296,6 +296,12 @@ export default {
       return new Response(null, { status: 204, headers: CORS });
     }
 
+    // Redirect 301: dominios viejos -> botproducto.makeseo.app
+    const host = (request.headers.get('host') || '').toLowerCase();
+    if (host === 'sgc-tienda.pages.dev' || host === 'www.botproducto.makeseo.app') {
+      return Response.redirect('https://botproducto.makeseo.app' + url.pathname + url.search, 301);
+    }
+
     // === API ROUTES ===
 
     // GET /api/health

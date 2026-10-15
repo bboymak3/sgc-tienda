@@ -126,16 +126,27 @@ async function getSystemPrompt(env, tenantId, businessName) {
 
 REGLAS:
 1. Tu unica funcion es tomar pedidos de productos. NUNCA hables de otra cosa.
-2. Cuando un cliente pregunte por productos, muestra la lista disponible.
-3. Cuando el cliente quiera comprar, pide: nombre, telefono, direccion de entrega.
-4. Confirma el pedido con el total y metodo de pago.
-5. Si preguntan algo fuera de pedidos: "Mi funcion es ayudarte con tus pedidos. Que producto te interesa?"
+2. Cuando un cliente pregunte por productos, usa el marcador [LISTA] para mostrar todos los productos como cards con fotos.
+3. Cuando un cliente pregunte por un producto especifico (o marque uno de la lista), usa el marcador [FOTO:nombre-exacto-del-producto] para mostrar la foto y card de ese producto.
+4. NUNCA liste productos como texto plano. SIEMPRE usa [LISTA] para mostrar todo o [FOTO:nombre] para mostrar uno especifico.
+5. Cuando el cliente quiera comprar, pide: nombre, telefono, direccion de entrega.
+6. Confirma el pedido con el total y metodo de pago.
+7. Si preguntan algo fuera de pedidos: "Mi funcion es ayudarte con tus pedidos. Que producto te interesa?"
+
+MARCADORES ESPECIALES (USAR SIEMPRE):
+- [LISTA] : Muestra todos los productos como cards con foto. USAR cuando el cliente pregunte "que tienes", "ver productos", "catálogo", "que vendes", "mostrame todo".
+- [FOTO:nombre-exacto-del-producto] : Muestra la foto de un producto. USAR cuando el cliente mencione un producto concreto. Ejemplo: [FOTO:Toyota Yaris 2026]
 
 PRODUCTOS DISPONIBLES:
 ${productosText}
 
 METODOS DE PAGO: ${metodosPago}
 MONEDA: ${moneda}
+
+EJEMPLOS DE RESPUESTA:
+- Cliente: "Hola que tienes?" -> Tu: "Hola! Estos son nuestros productos disponibles: [LISTA]"
+- Cliente: "Tienes piso para Toyota Yaris?" -> Tu: "Si, tenemos el piso calce perfecto para Toyota Yaris 2026: [FOTO:Toyota Yaris 2026]"
+- Cliente: "Quiero el numero 1" -> Tu: "Excelente! Aqui esta el producto: [FOTO:Toyota Yaris 2026]. Para continuar con el pedido necesito tu nombre, telefono y direccion de entrega."
 
 Cuando confirmes un pedido, responde con un JSON al final del mensaje en esta formato exacto:
 [PEDIDO]{"cliente_nombre":"","cliente_telefono":"","cliente_direccion":"","productos":[{"nombre":"","cantidad":1,"precio":0}],"total":0,"metodo_pago":""}[/PEDIDO]
@@ -249,10 +260,9 @@ async function handleChatWithoutAI(messages, productos, config, conversation, en
   }
 
   // Si pregunta por productos
-  if (/producto|que tienen|catalogo|lista|ver|mostrar|precio|cuanto|cuales/.test(userText) || userText === 'hola' || userText.length < 10) {
+  if (/producto|que tienen|catalogo|lista|ver|mostrar|precio|cuanto|cuales|que tienes|fotos|ver fotos|galeria/.test(userText) || userText === 'hola' || userText.length < 10) {
     if (productos.length === 0) return 'Hola! Por el momento no tenemos productos cargados. Vuelve mas tarde.';
-    let resp = 'Hola! Bienvenido a nuestra tienda. Estos son nuestros productos disponibles:\n\n';
-    resp += prodList;
+    let resp = 'Hola! Bienvenido a nuestra tienda. Estos son nuestros productos disponibles: [LISTA]';
     resp += '\n\nPara hacer un pedido, dime el numero o nombre del producto y tu nombre, telefono y direccion de entrega.';
     if (config.whatsapp_enabled === 'true' && config.whatsapp_number) {
       resp += `\n\nSi prefieres hablar con una persona real, escribenos por WhatsApp al ${config.whatsapp_number}.`;
@@ -270,7 +280,7 @@ async function handleChatWithoutAI(messages, productos, config, conversation, en
 
   // Respuesta por defecto
   if (productos.length > 0) {
-    return 'Puedo ayudarte con tus pedidos. Estos son nuestros productos:\n\n' + prodList + '\n\nDime que producto quieres y tus datos para la entrega.';
+    return 'Puedo ayudarte con tus pedidos. Estos son nuestros productos: [LISTA]\n\nDime que producto quieres y tus datos para la entrega.';
   }
   return 'Hola! Soy el bot de la tienda. Por el momento no tenemos productos disponibles. Vuelve mas tarde.';
 }
@@ -284,6 +294,12 @@ export default {
 
     if (method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: CORS });
+    }
+
+    // Redirect 301: dominios viejos -> botproducto.makeseo.app
+    const host = (request.headers.get('host') || '').toLowerCase();
+    if (host === 'sgc-tienda.pages.dev' || host === 'www.botproducto.makeseo.app') {
+      return Response.redirect('https://botproducto.makeseo.app' + url.pathname + url.search, 301);
     }
 
     // === API ROUTES ===
@@ -413,6 +429,33 @@ export default {
       return handleCreateCategory(request, env);
     }
 
+    // DEBUG: Test AI binding
+    if (path === '/api/debug/ai' && method === 'GET') {
+      try {
+        if (!env.AI) {
+          return json({ error: 'env.AI is undefined', hasDB: !!env.DB, hasASSETS: !!env.ASSETS });
+        }
+        const result = await env.AI.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast', {
+          messages: [
+            { role: 'system', content: 'You are a helpful assistant.' },
+            { role: 'user', content: 'Say "AI works" in 3 words.' }
+          ],
+          max_tokens: 50,
+        });
+        return json({
+          success: true,
+          type: typeof result,
+          hasResponse: !!result?.response,
+          hasChoices: !!result?.choices,
+          keys: Object.keys(result || {}),
+          raw: JSON.stringify(result).slice(0, 500),
+          response: result?.response || null,
+        });
+      } catch (e) {
+        return json({ error: e.message, stack: e.stack, name: e.name });
+      }
+    }
+
     // Si no es API, servir archivos estáticos via Pages ASSETS binding
     if (!path.startsWith('/api/')) {
       // Pages Advanced Mode: env.ASSETS serves static files from the Pages project
@@ -525,7 +568,7 @@ async function handleChat(request, env, url) {
       ];
 
       const aiProvider = aiConfig.ai_provider || 'cloudflare';
-      const aiModel = aiConfig.ai_model || '@cf/meta/llama-3.1-8b-instruct';
+      const aiModel = aiConfig.ai_model || '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
       const anthropicKey = aiConfig.anthropic_api_key || '';
 
       if (aiProvider === 'anthropic' && anthropicKey) {
@@ -553,13 +596,34 @@ async function handleChat(request, env, url) {
         aiWorked = true;
       } else {
         // Usar Cloudflare AI (default)
+        // Try response property first, then streaming response, then raw
         const aiResult = await env.AI.run(aiModel, {
           messages: aiMessages,
           max_tokens: 500,
         });
-        if (aiResult && aiResult.response) {
-          aiResponse = aiResult.response;
-          aiWorked = true;
+        if (aiResult) {
+          // Cloudflare AI returns response in different shapes depending on model
+          if (typeof aiResult === 'string') {
+            aiResponse = aiResult;
+            aiWorked = true;
+          } else if (aiResult.response) {
+            aiResponse = aiResult.response;
+            aiWorked = true;
+          } else if (aiResult.choices && aiResult.choices[0] && aiResult.choices[0].message) {
+            aiResponse = aiResult.choices[0].message.content || '';
+            aiWorked = true;
+          } else if (aiResult.choices && aiResult.choices[0] && aiResult.choices[0].delta && aiResult.choices[0].delta.content) {
+            aiResponse = aiResult.choices[0].delta.content;
+            aiWorked = true;
+          } else {
+            // Last resort: stringify result
+            aiResponse = String(aiResult.text || aiResult.message || aiResult.output || aiResult.result || '').trim();
+            if (aiResponse && aiResponse.length > 10) {
+              aiWorked = true;
+            } else {
+              console.error('AI returned unknown shape:', JSON.stringify(aiResult).slice(0, 200));
+            }
+          }
         }
       }
     } catch (e) {
@@ -672,7 +736,7 @@ async function handleChat(request, env, url) {
 async function handleGetProducts(request, env, url) {
   const tenantId = parseInt(url.searchParams.get('t') || '1');
   const result = await env.DB.prepare(
-    'SELECT id, nombre, descripcion, precio, precio_oferta, categoria, imagen_url, destacado FROM sgc_tie_Productos WHERE activo = 1 AND tenant_id = ? ORDER BY destacado DESC, orden, id'
+    'SELECT id, nombre, descripcion, precio, precio_oferta, categoria, imagen_url, imagen_url_2, imagen_url_3, destacado FROM sgc_tie_Productos WHERE activo = 1 AND tenant_id = ? ORDER BY destacado DESC, orden, id'
   ).bind(tenantId).all();
   return json({ products: result.results || [] });
 }
@@ -855,12 +919,12 @@ async function handleAdminGetProducts(request, env, url) {
 
 async function handleCreateProduct(request, env) {
   const body = await request.json();
-  const { tenant_id, nombre, descripcion, precio, precio_oferta, categoria, sku, stock, imagen_url, destacado, orden } = body;
+  const { tenant_id, nombre, descripcion, precio, precio_oferta, categoria, sku, stock, imagen_url, imagen_url_2, imagen_url_3, destacado, orden } = body;
   if (!nombre || precio === undefined) return jsonError('nombre y precio requeridos', 400);
 
   const result = await env.DB.prepare(
-    'INSERT INTO sgc_tie_Productos (tenant_id, nombre, descripcion, precio, precio_oferta, categoria, sku, stock, imagen_url, destacado, orden) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).bind(tenant_id || 1, nombre, descripcion || '', precio, precio_oferta || null, categoria || 'General', sku || '', stock ?? -1, imagen_url || '', destacado ? 1 : 0, orden || 0).run();
+    'INSERT INTO sgc_tie_Productos (tenant_id, nombre, descripcion, precio, precio_oferta, categoria, sku, stock, imagen_url, imagen_url_2, imagen_url_3, destacado, orden) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).bind(tenant_id || 1, nombre, descripcion || '', precio, precio_oferta || null, categoria || 'General', sku || '', stock ?? -1, imagen_url || '', imagen_url_2 || '', imagen_url_3 || '', destacado ? 1 : 0, orden || 0).run();
 
   return json({ success: true, id: result.meta.last_row_id });
 }
@@ -868,11 +932,11 @@ async function handleCreateProduct(request, env) {
 async function handleUpdateProduct(request, env, path) {
   const id = parseInt(path.split('/').pop());
   const body = await request.json();
-  const { nombre, descripcion, precio, precio_oferta, categoria, sku, stock, imagen_url, destacado, orden, activo } = body;
+  const { nombre, descripcion, precio, precio_oferta, categoria, sku, stock, imagen_url, imagen_url_2, imagen_url_3, destacado, orden, activo } = body;
 
   await env.DB.prepare(
-    'UPDATE sgc_tie_Productos SET nombre=?, descripcion=?, precio=?, precio_oferta=?, categoria=?, sku=?, stock=?, imagen_url=?, destacado=?, orden=?, activo=?, updated_at=datetime(\'now\') WHERE id=?'
-  ).bind(nombre, descripcion || '', precio, precio_oferta || null, categoria || 'General', sku || '', stock ?? -1, imagen_url || '', destacado ? 1 : 0, orden || 0, activo !== false ? 1 : 0, id).run();
+    'UPDATE sgc_tie_Productos SET nombre=?, descripcion=?, precio=?, precio_oferta=?, categoria=?, sku=?, stock=?, imagen_url=?, imagen_url_2=?, imagen_url_3=?, destacado=?, orden=?, activo=?, updated_at=datetime(\'now\') WHERE id=?'
+  ).bind(nombre, descripcion || '', precio, precio_oferta || null, categoria || 'General', sku || '', stock ?? -1, imagen_url || '', imagen_url_2 || '', imagen_url_3 || '', destacado ? 1 : 0, orden || 0, activo !== false ? 1 : 0, id).run();
 
   return json({ success: true });
 }
@@ -901,13 +965,14 @@ async function handleGetOrders(request, env, url) {
 async function handleUpdateOrder(request, env, path) {
   const id = parseInt(path.split('/').pop());
   const body = await request.json();
-  const { estado, estado_aprobacion, metodo_pago, observaciones, motivo_rechazo } = body;
+  const { estado, estado_aprobacion, metodo_pago, referencia_pago, observaciones, motivo_rechazo } = body;
 
   const updates = [];
   const values = [];
   if (estado) { updates.push('estado = ?'); values.push(estado); }
   if (estado_aprobacion) { updates.push('estado_aprobacion = ?'); values.push(estado_aprobacion); }
   if (metodo_pago) { updates.push('metodo_pago = ?'); values.push(metodo_pago); }
+  if (referencia_pago !== undefined) { updates.push('referencia_pago = ?'); values.push(referencia_pago); }
   if (observaciones !== undefined) { updates.push('observaciones = ?'); values.push(observaciones); }
   if (motivo_rechazo !== undefined) { updates.push('motivo_rechazo = ?'); values.push(motivo_rechazo); }
   updates.push("updated_at = datetime('now')");
