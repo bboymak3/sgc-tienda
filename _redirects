@@ -1,0 +1,14 @@
+# Archivos internos del repositorio: no se sirven.
+# _redirects no admite 404/410 en Cloudflare Pages, así que se manda al inicio
+# (302) para que el contenido del archivo nunca se entregue.
+
+/_worker.js / 302
+/wrangler.toml / 302
+/schema.sql / 302
+/README.md / 302
+/.gitignore / 302
+
+# Carpetas internas (código fuente y copias locales)
+/src/* / 302
+/public/* / 302
+/live/* / 302
