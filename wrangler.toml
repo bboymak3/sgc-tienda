@@ -14,6 +14,6 @@ database_id = "678b4adc-232d-43db-86ec-230828268161"
 binding = "AI"
 
 # Environment variables
+# JWT_SECRET se configura como SECRET en Cloudflare Pages (no aquí).
 [vars]
-JWT_SECRET = "alianza58_secret_2024"
 ADMIN_URL = "https://sgc-tienda.pages.dev"

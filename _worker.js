@@ -19,8 +19,9 @@ function jsonError(msg, status = 400) {
   return json({ error: msg }, status);
 }
 
-// JWT helpers (mismo secret que sgc-saas)
-const JWT_SECRET = 'alianza58_secret_2024';
+// JWT helpers. El secreto vive SOLO en la variable de entorno JWT_SECRET
+// (Cloudflare Pages). No hay valor por defecto: sin secreto no se emiten ni
+// se validan sesiones, para que una copia del código no exponga las sesiones.
 
 function base64urlEncode(obj) {
   return btoa(JSON.stringify(obj)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -31,7 +32,8 @@ function base64urlDecode(str) {
   if (pad) b64 += '='.repeat(4 - pad);
   return JSON.parse(atob(b64));
 }
-async function signJWT(payload, secret = JWT_SECRET) {
+async function signJWT(payload, secret) {
+  if (!secret) throw new Error('JWT_SECRET no configurado');
   const header = { alg: 'HS256', typ: 'JWT' };
   const now = Math.floor(Date.now() / 1000);
   const fullPayload = { ...payload, iat: now, exp: now + 7 * 24 * 3600 };
@@ -40,8 +42,8 @@ async function signJWT(payload, secret = JWT_SECRET) {
   const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(data));
   return data + '.' + btoa(String.fromCharCode(...new Uint8Array(sig))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
-async function verifyJWT(token, secret = JWT_SECRET) {
-  if (!token) return null;
+async function verifyJWT(token, secret) {
+  if (!token || !secret) return null;
   const parts = token.split('.');
   if (parts.length !== 3) return null;
   const [headerB64, payloadB64, signatureB64] = parts;
@@ -60,7 +62,7 @@ async function verifyJWT(token, secret = JWT_SECRET) {
 async function getUser(request, env) {
   const auth = request.headers.get('Authorization');
   if (!auth || !auth.startsWith('Bearer ')) return null;
-  return await verifyJWT(auth.substring(7), env.JWT_SECRET || JWT_SECRET);
+  return await verifyJWT(auth.substring(7), env.JWT_SECRET);
 }
 
 // === System prompt para el bot de tienda ===
@@ -777,7 +779,7 @@ async function handleAdminLogin(request, env) {
   }
   if (!valid) return jsonError('Credenciales invalidas', 401);
 
-  const token = await signJWT({ id: user.id, username: user.username, role: user.rol || 'admin' }, env.JWT_SECRET || JWT_SECRET);
+  const token = await signJWT({ id: user.id, username: user.username, role: user.rol || 'admin' }, env.JWT_SECRET);
   return json({ token, user: { id: user.id, username: user.username, role: user.rol || 'admin' } });
 }
 
