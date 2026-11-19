@@ -777,7 +777,7 @@ async function handleGetProducts(request, env, url) {
 async function handleGetPublicConfig(request, env, url) {
   const tenantId = parseInt(url.searchParams.get('t') || '1');
   const result = await env.DB.prepare(
-    "SELECT clave, valor FROM sgc_tie_Config WHERE tenant_id = ? AND clave IN ('bot_enabled', 'bot_name', 'welcome_message', 'color_primario', 'moneda', 'bot_paused', 'whatsapp_enabled', 'whatsapp_number', 'whatsapp_message', 'tienda_url')"
+    "SELECT clave, valor FROM sgc_tie_Config WHERE tenant_id = ? AND clave IN ('bot_enabled', 'bot_name', 'welcome_message', 'color_primario', 'moneda', 'bot_paused', 'whatsapp_enabled', 'whatsapp_number', 'whatsapp_message', 'tienda_url', 'bienvenida_productos')"
   ).bind(tenantId).all();
   const config = {};
   for (const row of result.results || []) {

@@ -145,9 +145,12 @@ async function init() {
 
     // Mensaje de bienvenida + lista de productos
     let welcome = config.welcome_message || 'Hola! Bienvenido a nuestra tienda.';
+    // Al abrir el chat solo se saluda: los productos se muestran cuando el cliente pregunta.
+    // Un negocio puede volver a mostrarlos con la config bienvenida_productos = 'true'.
     const featured = products.filter(p => p.destacado).slice(0, 5);
-    // Con catálogos grandes (ej. 166 productos) no se listan productos al azar en el saludo
-    const toShow = featured.length > 0 ? featured : (products.length <= 8 ? products.slice(0, 5) : []);
+    const toShow = config.bienvenida_productos === 'true'
+      ? (featured.length > 0 ? featured : products.slice(0, 5))
+      : [];
     if (toShow.length > 0) {
       welcome += '\n\nEstos son nuestros productos disponibles:';
       for (const p of toShow) {
