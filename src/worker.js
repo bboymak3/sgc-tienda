@@ -133,6 +133,28 @@ async function getSystemPrompt(env, tenantId, businessName) {
     }
   }
 
+  // Si el negocio tiene su propio prompt con reglas de fotos ([FOTO:...]), esas reglas mandan:
+  // no se agregan las reglas genéricas que piden usar [LISTA] siempre (se contradecían).
+  if (customPrompt.includes('[FOTO')) {
+    return `${customPrompt}
+
+PRODUCTOS DISPONIBLES:
+${productosText}
+
+METODOS DE PAGO: ${metodosPago}
+MONEDA: ${moneda}
+
+REGLAS DE FOTOS (obligatorias):
+- Cuando el cliente pregunte por un tipo de producto (ej. alarmas, radios, defensas), responde con 2 a 4 [FOTO:nombre exacto] de ESE tipo, copiando el nombre tal cual aparece en la lista.
+- Nunca muestres productos de otra categoría que la pedida. No repitas productos que ya mostraste en esta conversación salvo que el cliente lo pida.
+- Usa [LISTA] SOLO si el cliente pide ver el catálogo completo.
+
+Cuando confirmes un pedido, termina con:
+[PEDIDO]{"cliente_nombre":"","cliente_telefono":"","cliente_direccion":"","productos":[{"nombre":"","cantidad":1,"precio":0}],"total":0,"metodo_pago":""}[/PEDIDO]
+
+${waEnabled && waNumber ? `Si el cliente pide hablar con una persona real, dile: "Puedes contactarnos por WhatsApp al ${waNumber} y te atenderemos directamente."` : ''}`;
+  }
+
   return `Eres ${botName}, el asistente virtual de la tienda "${businessName}". Tu UNICA funcion es ayudar a los clientes a hacer pedidos de productos. NADA mas.
 
 REGLAS:
