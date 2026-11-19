@@ -66,6 +66,10 @@ button:disabled{opacity:.5}
 .product-card-price{font-size:.8rem;color:var(--green)}
 .product-card-add{background:var(--green);color:#042713;border:none;padding:6px 12px;border-radius:8px;font-weight:600;font-size:.8rem;cursor:pointer;white-space:nowrap}
 .product-card-add:hover{background:#fff}
+.product-card img{width:64px;height:64px;object-fit:contain;background:#fff;border-radius:8px;flex:none}
+.product-card-actions{display:flex;flex-direction:column;gap:6px;align-items:stretch}
+.product-card-link{color:var(--green);font-size:.75rem;font-weight:600;text-decoration:none;text-align:center;white-space:nowrap}
+.product-card-link:hover{text-decoration:underline}
 
 .wa-btn{display:block;width:100%;margin-top:8px;padding:10px;background:#25D366;color:#fff;border:none;border-radius:10px;font-weight:600;text-align:center;text-decoration:none;font-size:.85rem}
 .wa-btn:hover{background:#1da851}
@@ -141,16 +145,16 @@ async function init() {
 
     // Mensaje de bienvenida + lista de productos
     let welcome = config.welcome_message || 'Hola! Bienvenido a nuestra tienda.';
-    if (products.length > 0) {
+    const featured = products.filter(p => p.destacado).slice(0, 5);
+    // Con catálogos grandes (ej. 166 productos) no se listan productos al azar en el saludo
+    const toShow = featured.length > 0 ? featured : (products.length <= 8 ? products.slice(0, 5) : []);
+    if (toShow.length > 0) {
       welcome += '\n\nEstos son nuestros productos disponibles:';
-      // Mostrar máximo 5 productos destacados o los primeros 5
-      const featured = products.filter(p => p.destacado).slice(0, 5);
-      const toShow = featured.length > 0 ? featured : products.slice(0, 5);
       for (const p of toShow) {
         welcome += `\n• ${p.nombre} — $${p.precio_oferta || p.precio}`;
       }
-      if (products.length > 5) {
-        welcome += `\n\n...y ${products.length - 5} productos más. Pregúntame por lo que buscas!`;
+      if (products.length > toShow.length) {
+        welcome += `\n\n...y ${products.length - toShow.length} productos más. Pregúntame por lo que buscas!`;
       }
       welcome += '\n\nTambién puedes agregar productos al carrito 🛒 y finalizar tu compra al terminar.';
     }
@@ -158,8 +162,8 @@ async function init() {
     history.push({ role: 'assistant', content: welcome });
 
     // Mostrar productos como cards clickeables
-    if (products.length > 0) {
-      showProductsInChat(products.slice(0, 8));
+    if (toShow.length > 0) {
+      showProductsInChat(toShow);
     }
 
     // WhatsApp
@@ -180,16 +184,62 @@ function showProductsInChat(prods) {
   for (const p of prods) {
     const card = document.createElement('div');
     card.className = 'product-card';
+    const img = safeUrl(p.imagen_url);
+    const ficha = productUrl(p);
+    const precio = (p.precio_oferta || p.precio) ? `$${Number(p.precio_oferta || p.precio).toLocaleString('es-CL')} ${escapeHtml(config.moneda || 'CLP')}` : 'Precio a consultar';
     card.innerHTML = `
+      ${img ? `<img src="${escapeHtml(img)}" alt="${escapeHtml(p.nombre)}" loading="lazy">` : ''}
       <div class="product-card-info">
         <div class="product-card-name">${escapeHtml(p.nombre)}</div>
-        <div class="product-card-price">$${p.precio_oferta || p.precio} ${config.moneda || 'CLP'}</div>
+        <div class="product-card-price">${precio}</div>
       </div>
-      <button class="product-card-add" onclick="addToCart(${p.id})"><i class="fas fa-plus"></i> Agregar</button>
+      <div class="product-card-actions">
+        <button class="product-card-add" onclick="addToCart(${Number(p.id)})"><i class="fas fa-plus"></i> Agregar</button>
+        ${ficha ? `<a class="product-card-link" href="${escapeHtml(ficha)}" target="_blank" rel="noopener">Ver en la tienda</a>` : ''}
+      </div>
     `;
     chat.appendChild(card);
   }
   chat.scrollTop = chat.scrollHeight;
+}
+
+// Solo URLs https (evita javascript: u otros esquemas en datos del catálogo)
+function safeUrl(u) { u = String(u || '').trim(); return /^https:\/\//i.test(u) ? u : ''; }
+// Ficha del producto en la tienda del cliente (config tienda_url + sku), ej. https://tienda.optimuscars.cl/producto/cp-03/
+function productUrl(p) {
+  const base = safeUrl(config.tienda_url).replace(/\/+$/, '');
+  if (!base || !p.sku || !/^[a-z0-9-]+$/i.test(p.sku)) return '';
+  return `${base}/producto/${encodeURIComponent(p.sku)}/`;
+}
+const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+function findProduct(name) {
+  const q = norm(name);
+  if (!q) return null;
+  let best = products.find(p => norm(p.nombre) === q);
+  if (best) return best;
+  // coincidencia parcial: el nombre más parecido en largo
+  const cands = products.filter(p => { const n = norm(p.nombre); return n.includes(q) || q.includes(n); });
+  cands.sort((a, b) => Math.abs(norm(a.nombre).length - q.length) - Math.abs(norm(b.nombre).length - q.length));
+  return cands[0] || null;
+}
+/** Muestra la respuesta del bot: texto + tarjetas de [FOTO:nombre] y [LISTA]; oculta [PEDIDO]. */
+function renderBotResponse(text) {
+  let t = String(text || '').replace(/\[PEDIDO\][\s\S]*?\[\/PEDIDO\]/g, '');
+  const fotos = [];
+  t = t.replace(/\[FOTO:\s*([^\]]{1,160})\]/g, (m, n) => { const p = findProduct(n); if (p && !fotos.includes(p)) fotos.push(p); return p ? p.nombre : n; });
+  const lista = /\[LISTA\]/.test(t);
+  t = t.replace(/\[LISTA\]/g, '').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  if (t) addMsg('bot', t);
+  if (fotos.length) showProductsInChat(fotos.slice(0, 3));
+  if (lista) {
+    const destacados = products.filter(p => p.destacado);
+    const muestra = (destacados.length ? destacados : products).slice(0, 8);
+    showProductsInChat(muestra);
+    if (products.length > muestra.length) {
+      const base = safeUrl(config.tienda_url);
+      addMsg('bot', base ? `Hay ${products.length} productos. Ve el catálogo completo en ${base}` : `Hay ${products.length} productos. Dime qué buscas y te muestro opciones.`);
+    }
+  }
 }
 
 function escapeHtml(s) { return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -320,9 +370,9 @@ async function send() {
     });
     const data = await res.json();
     if (data.error) {
-      addMsg('bot', 'Lo siento, hubo un error: ' + data.error);
+      addMsg('bot', 'Lo siento, hubo un error: ' + String(data.error).slice(0, 200));
     } else {
-      addMsg('bot', data.response);
+      renderBotResponse(data.response);
       history.push({ role: 'assistant', content: data.response });
       if (data.session_id) sessionId = data.session_id;
     }

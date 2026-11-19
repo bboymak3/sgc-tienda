@@ -431,38 +431,11 @@ export default {
       return handleCreateCategory(request, env);
     }
 
-    // DEBUG: Test AI binding
-    if (path === '/api/debug/ai' && method === 'GET') {
-      try {
-        if (!env.AI) {
-          return json({ error: 'env.AI is undefined', hasDB: !!env.DB, hasASSETS: !!env.ASSETS });
-        }
-        const result = await env.AI.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast', {
-          messages: [
-            { role: 'system', content: 'You are a helpful assistant.' },
-            { role: 'user', content: 'Say "AI works" in 3 words.' }
-          ],
-          max_tokens: 50,
-        });
-        return json({
-          success: true,
-          type: typeof result,
-          hasResponse: !!result?.response,
-          hasChoices: !!result?.choices,
-          keys: Object.keys(result || {}),
-          raw: JSON.stringify(result).slice(0, 500),
-          response: result?.response || null,
-        });
-      } catch (e) {
-        return json({ error: e.message, stack: e.stack, name: e.name });
-      }
-    }
-
     // Si no es API, servir archivos estáticos via Pages ASSETS binding
     if (!path.startsWith('/api/')) {
       // Pages Advanced Mode: env.ASSETS serves static files from the Pages project
       if (env.ASSETS) {
-        return env.ASSETS.fetch(request);
+        return withSecurityHeaders(await env.ASSETS.fetch(request), path);
       }
       // Fallback if ASSETS not available
       return new Response('<html><head><meta http-equiv="refresh" content="0;url=/admin"></head><body style="background:#0a0a0a;color:#22c55e;font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0"><div style="text-align:center"><h1>SGC Tienda API</h1><p>Worker activo. <a href="/admin" style="color:#22c55e">Ir al panel admin</a></p></div></body></html>', { headers: { 'Content-Type': 'text/html' } });
@@ -471,17 +444,66 @@ export default {
   }
 };
 
+// Headers de seguridad para las páginas (panel y chat).
+// El chat (/chat) se puede mostrar en un iframe (tiendas de los clientes); el panel no.
+function withSecurityHeaders(res, path) {
+  const r = new Response(res.body, res);
+  r.headers.set('X-Content-Type-Options', 'nosniff');
+  r.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  r.headers.set('Strict-Transport-Security', 'max-age=31536000');
+  if (path.startsWith('/admin')) {
+    r.headers.set('X-Frame-Options', 'DENY');
+    r.headers.set('Content-Security-Policy', "frame-ancestors 'none'");
+    r.headers.set('Cache-Control', 'no-store');
+    r.headers.set('X-Robots-Tag', 'noindex, nofollow');
+  }
+  return r;
+}
+
+// Límites del chat público (evitan abuso y costos de IA)
+const MAX_MENSAJES = 30;
+const MAX_LARGO_MENSAJE = 2000;
+
+/** Deja solo mensajes user/assistant con texto acotado: el cliente no puede inyectar mensajes "system". */
+function sanitizeMessages(messages) {
+  return messages.slice(-MAX_MENSAJES).map(m => {
+    const content = String(typeof m === 'string' ? m : (m && m.content) || '').slice(0, MAX_LARGO_MENSAJE);
+    const role = m && m.role === 'assistant' ? 'assistant' : 'user';
+    return { role, content };
+  }).filter(m => m.content.trim());
+}
+
+const normName = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+
+/** Recalcula precios y total del pedido con los precios de la base de datos (la IA no fija precios). */
+function repriceOrder(items, productosList) {
+  const byName = new Map(productosList.map(p => [normName(p.nombre), p]));
+  const out = [];
+  const desconocidos = [];
+  for (const it of Array.isArray(items) ? items.slice(0, 50) : []) {
+    const nombre = String(it && it.nombre || '').slice(0, 200);
+    const cantidad = Math.min(99, Math.max(1, parseInt(it && it.cantidad, 10) || 1));
+    const p = byName.get(normName(nombre));
+    if (p) out.push({ nombre: p.nombre, cantidad, precio: p.precio_oferta || p.precio || 0 });
+    else { out.push({ nombre, cantidad, precio: 0 }); desconocidos.push(nombre); }
+  }
+  const total = out.reduce((s, p) => s + p.precio * p.cantidad, 0);
+  return { productos: out, total, desconocidos };
+}
+
 // === HANDLERS ===
 
 async function handleChat(request, env, url) {
   try {
     const body = await request.json();
-    const { messages, session_id } = body;
     const tenantId = parseInt(url.searchParams.get('t') || '1');
+    const session_id = typeof body.session_id === 'string' ? body.session_id.slice(0, 64) : null;
 
-    if (!messages || !Array.isArray(messages)) {
+    if (!body.messages || !Array.isArray(body.messages)) {
       return jsonError('messages es requerido (array)', 400);
     }
+    const messages = sanitizeMessages(body.messages);
+    if (!messages.length) return jsonError('Mensaje vacío', 400);
 
     // Verificar si el bot está habilitado
     const botEnabled = await env.DB.prepare(
@@ -523,8 +545,8 @@ async function handleChat(request, env, url) {
     } else {
       // Re-fetch para obtener el ID
       conversation = await env.DB.prepare(
-        'SELECT * FROM sgc_tie_ChatConversations WHERE session_id = ?'
-      ).bind(conversation.session_id).first();
+        'SELECT * FROM sgc_tie_ChatConversations WHERE session_id = ? AND tenant_id = ?'
+      ).bind(conversation.session_id, tenantId).first();
       if (conversation) {
         await env.DB.prepare(
           'INSERT INTO sgc_tie_ChatMessages (conversation_id, role, content) VALUES (?, ?, ?)'
@@ -563,10 +585,7 @@ async function handleChat(request, env, url) {
     try {
       const aiMessages = [
         { role: 'system', content: systemPrompt },
-        ...messages.slice(-10).map(m => ({
-          role: m.role || 'user',
-          content: typeof m === 'string' ? m : (m.content || '')
-        }))
+        ...messages.slice(-10)
       ];
 
       const aiProvider = aiConfig.ai_provider || 'cloudflare';
@@ -587,10 +606,7 @@ async function handleChat(request, env, url) {
             model: claudeModel,
             max_tokens: 500,
             system: systemPrompt,
-            messages: messages.slice(-10).map(m => ({
-              role: m.role === 'assistant' ? 'assistant' : 'user',
-              content: typeof m === 'string' ? m : (m.content || '')
-            }))
+            messages: messages.slice(-10)
           })
         });
         const claudeData = await response.json();
@@ -642,14 +658,19 @@ async function handleChat(request, env, url) {
     if (pedidoMatch) {
       try {
         const pedidoData = JSON.parse(pedidoMatch[1]);
-        const total = pedidoData.productos?.reduce((sum, p) => sum + (p.precio * (p.cantidad || 1)), 0) || 0;
+        const repriced = repriceOrder(pedidoData.productos, productosList);
+        pedidoData.productos = repriced.productos;
+        const total = repriced.total;
+        if (repriced.desconocidos.length) {
+          pedidoData.observaciones = (String(pedidoData.observaciones || '') + ' [Revisar: productos no encontrados en el catálogo: ' + repriced.desconocidos.join(', ') + ']').trim();
+        }
         const result = await env.DB.prepare(
           `INSERT INTO sgc_tie_Pedidos (tenant_id, cliente_nombre, cliente_telefono, cliente_email, cliente_direccion, cliente_referencia, productos_json, total, metodo_pago, estado, observaciones)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pendiente', ?)`
         ).bind(
-          tenantId, pedidoData.cliente_nombre || '', pedidoData.cliente_telefono || '',
-          pedidoData.cliente_email || '', pedidoData.cliente_direccion || '', pedidoData.cliente_referencia || '',
-          JSON.stringify(pedidoData.productos || []), total, pedidoData.metodo_pago || 'pendiente', pedidoData.observaciones || ''
+          tenantId, String(pedidoData.cliente_nombre || '').slice(0, 120), String(pedidoData.cliente_telefono || '').slice(0, 40),
+          String(pedidoData.cliente_email || '').slice(0, 120), String(pedidoData.cliente_direccion || '').slice(0, 300), String(pedidoData.cliente_referencia || '').slice(0, 200),
+          JSON.stringify(pedidoData.productos || []), total, String(pedidoData.metodo_pago || 'pendiente').slice(0, 40), String(pedidoData.observaciones || '').slice(0, 1000)
         ).run();
         if (conversation) {
           await env.DB.prepare('UPDATE sgc_tie_ChatConversations SET pedido_id = ?, cliente_nombre = ?, cliente_telefono = ?, updated_at = datetime(\'now\') WHERE id = ?')
@@ -731,14 +752,15 @@ async function handleChat(request, env, url) {
 
     return json({ response: aiResponse, session_id: conversation?.session_id || session_id });
   } catch (e) {
-    return jsonError('Error en chat: ' + e.message, 500);
+    console.error('Error en chat:', e && e.message);
+    return jsonError('Error en el chat. Intenta de nuevo.', 500);
   }
 }
 
 async function handleGetProducts(request, env, url) {
   const tenantId = parseInt(url.searchParams.get('t') || '1');
   const result = await env.DB.prepare(
-    'SELECT id, nombre, descripcion, precio, precio_oferta, categoria, imagen_url, imagen_url_2, imagen_url_3, destacado FROM sgc_tie_Productos WHERE activo = 1 AND tenant_id = ? ORDER BY destacado DESC, orden, id'
+    'SELECT id, nombre, descripcion, precio, precio_oferta, categoria, sku, imagen_url, imagen_url_2, imagen_url_3, destacado FROM sgc_tie_Productos WHERE activo = 1 AND tenant_id = ? ORDER BY destacado DESC, orden, id'
   ).bind(tenantId).all();
   return json({ products: result.results || [] });
 }
@@ -746,7 +768,7 @@ async function handleGetProducts(request, env, url) {
 async function handleGetPublicConfig(request, env, url) {
   const tenantId = parseInt(url.searchParams.get('t') || '1');
   const result = await env.DB.prepare(
-    "SELECT clave, valor FROM sgc_tie_Config WHERE tenant_id = ? AND clave IN ('bot_enabled', 'bot_name', 'welcome_message', 'color_primario', 'moneda', 'bot_paused')"
+    "SELECT clave, valor FROM sgc_tie_Config WHERE tenant_id = ? AND clave IN ('bot_enabled', 'bot_name', 'welcome_message', 'color_primario', 'moneda', 'bot_paused', 'whatsapp_enabled', 'whatsapp_number', 'whatsapp_message', 'tienda_url')"
   ).bind(tenantId).all();
   const config = {};
   for (const row of result.results || []) {
@@ -896,7 +918,8 @@ async function handleCreateTenant(request, env) {
       admin_url: 'https://sgc-tienda.pages.dev/admin',
     });
   } catch (e) {
-    return jsonError('Error al crear negocio: ' + e.message, 500);
+    console.error('Error al crear negocio:', e && e.message);
+    return jsonError('Error al crear negocio', 500);
   }
 }
 
