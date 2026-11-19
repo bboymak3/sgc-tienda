@@ -101,8 +101,17 @@ async function getSystemPrompt(env, tenantId, businessName) {
 
   let productosText = 'No hay productos cargados aún.';
   if (productos.length > 0) {
-    // NO listar todos los productos si son muchos. Solo mostrar resumen por categoria.
-    if (productos.length <= 8) {
+    // Hasta 300 productos: lista completa (nombre exacto, precio y categoría) para que el bot
+    // conozca al instante lo que se agrega o edita en el panel. Más de 300: resumen por categoría.
+    if (productos.length > 8 && productos.length <= 300) {
+      const precioTxt = p => {
+        const v = p.precio_oferta || p.precio;
+        return v > 0 ? '$' + Number(v).toLocaleString('es-CL') + ' ' + moneda : 'precio a consultar';
+      };
+      productosText = `CATÁLOGO COMPLETO (${productos.length} productos — usa SIEMPRE el nombre EXACTO de esta lista en [FOTO:...]):\n` +
+        productos.map(p => `- ${p.nombre} | ${precioTxt(p)} | ${p.categoria || 'General'}`).join('\n') +
+        `\n\nAntes de decir que no tienes un producto, búscalo en esta lista.`;
+    } else if (productos.length <= 8) {
       productosText = productos.map((p, i) =>
         `${i + 1}. ${p.nombre} - $${p.precio_oferta || p.precio} ${moneda}`
       ).join('\n');
