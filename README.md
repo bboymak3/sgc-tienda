@@ -27,7 +27,18 @@ Bot de IA para tiendas: catálogo con fotos, carrito, checkout, aprobación de p
 - Carrito + checkout + pago obligatorio (método + referencia)
 - Bot OptimusBot (Calce Perfecto Trexon)
 - Fotos bajo demanda [FOTO:] y [LISTA]
-- Integrado en tienda.optimuscars.cl (botón Asistente Optimus)
+- Usado por tienda.optimuscars.cl: su chat propio "Asesor virtual · Optimus AI" (repo `tiendaoptimus`, `site/asesor.js`) llama a `POST /api/chat?t=37`
+
+## 🤖 Cómo arma la IA el prompt (`getSystemPrompt`)
+
+- **Catálogo en vivo:** con hasta 300 productos activos, el prompt incluye la lista completa (nombre exacto, precio y categoría) leída de D1 en cada conversación; con más, un resumen por categoría. Lo que se agrega o edita en el panel de la tienda (`tienda.optimuscars.cl/admin`, misma tabla `sgc_tie_Productos`) lo conoce el bot al instante.
+- **Prompt propio del negocio (`custom_prompt`):** si trae reglas de fotos (`[FOTO:...]`), esas reglas mandan y no se agregan las genéricas que pedían `[LISTA]` siempre; se suma la instrucción de mostrar 2 a 4 productos de la categoría pedida. Sin `custom_prompt`, se usan las reglas genéricas de siempre.
+- El `custom_prompt` de Optimus Cars se aplica con `tools/set-bot-prompt.mjs` del repo `tiendaoptimus` (ya no lleva el catálogo: lo pone el bot).
+- Modelo por tenant: config `ai_model` (Optimus Cars: `@cf/meta/llama-3.3-70b-instruct-fp8-fast`).
+
+## ⚙️ Config pública por tenant (`/api/config`)
+
+`bot_enabled`, `bot_name`, `welcome_message`, `color_primario`, `moneda`, `bot_paused`, `whatsapp_enabled`, `whatsapp_number`, `whatsapp_message`, `tienda_url` y `bienvenida_productos`. Por defecto el chat (`/chat`) **solo saluda** al abrir; con `bienvenida_productos = 'true'` vuelve a listar los productos destacados en el saludo.
 
 ## 🔐 Admin
 
